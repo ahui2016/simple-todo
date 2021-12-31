@@ -1,6 +1,6 @@
 import click
 
-from todo.model import ErrMsg
+from simpletodo.model import ErrMsg
 from . import (
     __version__,
     __package_name__,
