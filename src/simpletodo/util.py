@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import cast
 from appdirs import AppDirs
 
-from simpletodo.model import DB, Repeat, TodoItem, TodoList, TodoStatus, new_db
+from simpletodo.model import DB, Repeat, TodoList, TodoStatus, new_db
 
 todo_db_name = "todo-db.json"
 
@@ -36,9 +36,9 @@ def split_db(db: DB) -> tuple[TodoList, TodoList, TodoList]:
             done_list.append(item)
         if Repeat[item["repeat"]] is not Repeat.Never:
             repeat_list.append(item)
-    todo_list.sort(key=lambda x: x["ctime"])
-    done_list.sort(key=lambda x: x["dtime"])
-    repeat_list.sort(key=lambda x: x["ntime"])
+    todo_list.sort(key=lambda x: x["ctime"], reverse=True)
+    done_list.sort(key=lambda x: x["dtime"], reverse=True)
+    repeat_list.sort(key=lambda x: x["ntime"], reverse=True)
     return todo_list, done_list, repeat_list
 
 

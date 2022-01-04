@@ -1,7 +1,7 @@
 from typing import cast
 import click
 
-from simpletodo.model import ErrMsg, TodoStatus, new_todoitem, now
+from simpletodo.model import ErrMsg, TodoList, TodoStatus, new_todoitem, now
 from simpletodo.util import (
     db_path,
     ensure_db_file,
@@ -81,10 +81,15 @@ def add(ctx, event):
     """Add an event.
 
     [EVENT] is a string describing a todo item.
+
     Example: todo Buy more beer.
     """
     event = cast(tuple[str], event)
-    subject = " ".join(event)
+    subject = " ".join(event).strip()
+    if not subject:
+        click.echo(ctx.get_help())
+        ctx.exit()
+
     db = load_db()
     db["items"].insert(0, new_todoitem(subject))
     update_db(db)
@@ -92,20 +97,61 @@ def add(ctx, event):
 
 
 @cli.command()
-@click.argument('n', nargs=1, type=click.INT)
+@click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def done(ctx, n):
-    """Mark the [N] item as 'Completed'
+    """Mark the N'th item as 'Completed'
 
     Example: todo done 1
     """
+    db = load_db()
+    todo_list, _, _ = split_db(db)
+    validate_todolist(ctx, todo_list, n)
+    i = db["items"].index(todo_list[n - 1])
+    db["items"][i]["status"] = TodoStatus.Completed.name
+    db["items"][i]["dtime"] = now()
+    update_db(db)
+
+
+@cli.command()
+@click.argument("n", nargs=1, type=click.INT)
+@click.pass_context
+def delete(ctx, n):
+    """Delete the N'th item. (It will be removed, not marked as completed)
+
+    Example: todo delete 2
+    """
+    db = load_db()
+    todo_list, _, _ = split_db(db)
+    validate_todolist(ctx, todo_list, n)
+    db["items"].remove(todo_list[n - 1])
+    update_db(db)
+
+
+@cli.command()
+@click.argument("n", nargs=1, type=click.INT)
+@click.pass_context
+def redo(ctx, n):
+    """Redo the N'th item (which in the completed list).
+
+    Example: todo redo 1
+    """
+    db = load_db()
+    _, done_list, _ = split_db(db)
+    validate_todolist(ctx, done_list, n)
+    i = db["items"].index(done_list[n - 1])
+    db["items"][i]["status"] = TodoStatus.Incomplete.name
+    db["items"][i]["ctime"] = now()
+    db["items"][i]["dtime"] = 0
+    update_db(db)
+
+
+def validate_todolist(ctx: click.Context, l: TodoList, n: int) -> None:
     if n < 1:
         click.echo("Please input a number bigger than zero.")
         ctx.exit()
 
-    db = load_db()
-    todo_list, _, _ = split_db(db)
-    size = len(todo_list)
+    size = len(l)
     if n > size:
         if size == 1:
             msg = "There is only 1 item."
@@ -113,11 +159,6 @@ def done(ctx, n):
             msg = f"There are only {size} items"
         click.echo(msg)
         ctx.exit()
-    
-    i = db["items"].index(todo_list[n-1])
-    db["items"][i]["status"] = TodoStatus.Completed.name
-    db["items"][i]["dtime"] = now()
-    update_db(db)
 
 
 # 初始化

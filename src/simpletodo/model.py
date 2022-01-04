@@ -10,8 +10,8 @@ ErrMsg = str
 """一个描述错误内容的简单字符串，空字符串表示无错误。"""
 
 
-def now() -> int:
-    return arrow.now().int_timestamp
+def now() -> float:
+    return arrow.now().timestamp()
 
 
 class TodoStatus(Enum):
@@ -27,13 +27,13 @@ class Repeat(Enum):
 
 
 class TodoItem(TypedDict):
-    ctime: int  # create-time, 用于排序, 同时也当作 ID
-    dtime: int  # done-time, 完成时间，只用于排序
+    ctime: float  # create-time, 用于排序, 同时也当作 ID
+    dtime: float  # done-time, 完成时间，只用于排序
     event: str
     status: str  # TodoStatus
     repeat: str  # Repeat
-    stime: int  # start-time, 第一次提醒日期
-    ntime: int  # next-time, 下次提醒日期
+    stime: float  # start-time, 第一次提醒日期
+    ntime: float  # next-time, 下次提醒日期
 
 
 TodoList = list[TodoItem]
