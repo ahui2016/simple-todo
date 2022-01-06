@@ -39,6 +39,7 @@ class TodoItem(TypedDict):
 
 
 TodoList = list[TodoItem]
+IdxTodoList = list[tuple[int, TodoItem]]  # list of (index, item)
 
 
 def new_todoitem(event: str) -> TodoItem:

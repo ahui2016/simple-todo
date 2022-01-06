@@ -52,6 +52,9 @@ def show_where(ctx: click.Context, param, value):
     expose_value=False,
     callback=show_where,
 )
+# @click.option(
+#     ""
+# )
 @click.pass_context
 def cli(ctx):
     """simple-todo: Yet another command line TODO tool (命令行TODO工具)
@@ -109,17 +112,14 @@ def done(ctx, n):
     Example: todo done 1
     """
     db = load_db()
-    todo_list, _, _ = split_db(db)
-    err = validate_todolist(todo_list, n)
-    if err == NotFound:
-        click.echo("No item in the todo list.")
-        click.echo("Try 'todo --help' to get more information.")
-        ctx.exit()
+    err = validate_n(db["items"], n)
     check(ctx, err)
 
-    i = db["items"].index(todo_list[n - 1])
-    db["items"][i]["status"] = TodoStatus.Completed.name
-    db["items"][i]["dtime"] = now()
+    status = db["items"][n - 1]["status"]
+    if TodoStatus[status] is TodoStatus.Completed:
+        
+    db["items"][n - 1]["status"] = TodoStatus.Completed.name
+    db["items"][n - 1]["dtime"] = now()
     update_db(db)
     ctx.exit()
 
@@ -130,20 +130,12 @@ def done(ctx, n):
 def delete(ctx, n):
     """Deletes the N'th item. (It will be removed, not marked as completed)
 
-    This command deletes an item in the todo list.
-    Use 'todo clean' to clear the completed list.
-
     Example: todo delete 2
     """
     db = load_db()
-    todo_list, _, _ = split_db(db)
-    err = validate_todolist(todo_list, n)
-    if err == NotFound:
-        click.echo("No item in the todo list.")
-        click.echo("Try 'todo delete --help' to get more information.")
-        ctx.exit()
+    err = validate_n(db["items"], n)
     check(ctx, err)
-    db["items"].remove(todo_list[n - 1])
+    del db["items"][n-1]
     update_db(db)
     ctx.exit()
 
@@ -154,8 +146,8 @@ def clean(ctx):
     """Clears the completed list (removes all items in it)."""
     db = load_db()
     _, done_list, _ = split_db(db)
-    for item in done_list:
-        db["items"].remove(item)
+    for idx, _ in done_list:
+        del db["items"][idx]
     update_db(db)
     ctx.exit()
 
@@ -170,7 +162,7 @@ def redo(ctx, n):
     """
     db = load_db()
     _, done_list, _ = split_db(db)
-    err = validate_todolist(done_list, n)
+    err = validate_n(done_list, n)
     if err == NotFound:
         click.echo("No item in the completed list.")
         ctx.exit()
@@ -208,7 +200,7 @@ def repeat(ctx, every, start, n):
     """
     db = load_db()
     todo_list, _, _ = split_db(db)
-    err = validate_todolist(todo_list, n)
+    err = validate_n(todo_list, n)
     if err == NotFound:
         click.echo("No item in the todo list.")
         click.echo("Try 'todo --help' to get more information.")
@@ -234,13 +226,13 @@ def repeat(ctx, every, start, n):
     ctx.exit()
 
 
-def validate_todolist(l: TodoList, n: int) -> ErrMsg:
+def validate_n(l: TodoList, n: int) -> ErrMsg:
+    if not l:
+        return "There is no item in the list."
     if n < 1:
         return "Please input a number bigger than zero."
 
     size = len(l)
-    if not size:
-        return NotFound
     if n > size:
         if size == 1:
             return "There is only 1 item."
@@ -254,7 +246,7 @@ def set_repeat(db: DB, i: int, start: str) -> None:
     today = arrow.now().ceil('day')
     start_day = arrow.get(start)
     if start_day > today:
-        db["items"][i]["status"] = TodoStatus.Incomplete.name
+        db["items"][i]["status"] = TodoStatus.Completed.name
 
     s_date = start_day.format(DateFormat)
     db["items"][i]["s_date"] = s_date

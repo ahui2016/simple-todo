@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import cast
 from appdirs import AppDirs
 
-from simpletodo.model import DB, Repeat, TodoList, TodoStatus, new_db
+from simpletodo.model import DB, IdxTodoList, Repeat, TodoList, TodoStatus, new_db
 
 todo_db_name = "todo-db.json"
 DateFormat = "YYYY-MM-DD"
@@ -26,20 +26,20 @@ def load_db() -> DB:
         return cast(DB, json.load(f))
 
 
-def split_db(db: DB) -> tuple[TodoList, TodoList, TodoList]:
-    todo_list: TodoList = []
-    done_list: TodoList = []
-    repeat_list: TodoList = []
-    for item in db["items"]:
+def split_db(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
+    todo_list: IdxTodoList = []
+    done_list: IdxTodoList = []
+    repeat_list: IdxTodoList = []
+    for idx, item in enumerate(db["items"]):
         if TodoStatus[item["status"]] is TodoStatus.Incomplete:
-            todo_list.append(item)
+            todo_list.append((idx, item))
         if item["dtime"] > 0:
-            done_list.append(item)
+            done_list.append((idx, item))
         if Repeat[item["repeat"]] is not Repeat.Never:
-            repeat_list.append(item)
-    todo_list.sort(key=lambda x: x["ctime"], reverse=True)
-    done_list.sort(key=lambda x: x["dtime"], reverse=True)
-    repeat_list.sort(key=lambda x: x["n_date"], reverse=True)
+            repeat_list.append((idx, item))
+    todo_list.sort(key=lambda x: x[1]["ctime"], reverse=True)
+    done_list.sort(key=lambda x: x[1]["dtime"], reverse=True)
+    repeat_list.sort(key=lambda x: x[1]["n_date"], reverse=True)
     return todo_list, done_list, repeat_list
 
 
@@ -48,25 +48,25 @@ def update_db(db: DB) -> None:
         json.dump(db, f, indent=4, ensure_ascii=False)
 
 
-def print_todolist(l: TodoList) -> None:
+def print_todolist(l: IdxTodoList) -> None:
     if not l:
         return
     print("\nTodo\n------------")
-    for idx, item in enumerate(l):
+    for idx, item in l:
         print(f"{idx+1}. {item['event']}")
 
 
-def print_donelist(l: TodoList) -> None:
+def print_donelist(l: IdxTodoList) -> None:
     if not l:
         return
     print("\nCompleted\n------------")
-    for idx, item in enumerate(l):
+    for idx, item in l:
         print(f"{idx+1}. {item['event']}")
 
 
-def print_repeatlist(l: TodoList) -> None:
+def print_repeatlist(l: IdxTodoList) -> None:
     print("\nSchedule\n------------")
-    for idx, item in enumerate(l):
+    for idx, item in l:
         print(f"{idx+1}. every {item['repeat'].lower()} [{item['n_date']}] {item['event']}")
 
 
