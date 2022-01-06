@@ -7,6 +7,7 @@ from appdirs import AppDirs
 from simpletodo.model import DB, Repeat, TodoList, TodoStatus, new_db
 
 todo_db_name = "todo-db.json"
+DateFormat = "YYYY-MM-DD"
 
 app_dirs = AppDirs("todo", "github-ahui2016")
 app_config_dir = Path(app_dirs.user_config_dir)
@@ -38,7 +39,7 @@ def split_db(db: DB) -> tuple[TodoList, TodoList, TodoList]:
             repeat_list.append(item)
     todo_list.sort(key=lambda x: x["ctime"], reverse=True)
     done_list.sort(key=lambda x: x["dtime"], reverse=True)
-    repeat_list.sort(key=lambda x: x["ntime"], reverse=True)
+    repeat_list.sort(key=lambda x: x["n_date"], reverse=True)
     return todo_list, done_list, repeat_list
 
 
@@ -66,5 +67,10 @@ def print_donelist(l: TodoList) -> None:
 def print_repeatlist(l: TodoList) -> None:
     print("\nSchedule\n------------")
     for idx, item in enumerate(l):
-        reminder = arrow.get(item["ntime"]).format("YYYY-MM-DD")
-        print(f"{idx+1}. [{reminder}] {item['event']}")
+        print(f"{idx+1}. every {item['repeat'].lower()} [{item['n_date']}] {item['event']}")
+
+
+def is_last_day(date: str) -> bool:
+    """Is it the last day of month?"""
+    last_day = arrow.get(date).ceil('month').format(DateFormat)
+    return date == last_day

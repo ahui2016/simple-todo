@@ -34,8 +34,8 @@ class TodoItem(TypedDict):
     event: str
     status: str  # TodoStatus
     repeat: str  # Repeat
-    stime: float  # start-time, 第一次提醒日期
-    ntime: float  # next-time, 下次提醒日期
+    s_date: str  # start-date, 第一次提醒日期, "YYYY-MM-DD"
+    n_date: str  # next-date, 下次提醒日期, "YYYY-MM-DD"
 
 
 TodoList = list[TodoItem]
@@ -48,8 +48,8 @@ def new_todoitem(event: str) -> TodoItem:
         event=event,
         status=TodoStatus.Incomplete.name,
         repeat=Repeat.Never.name,
-        stime=0,
-        ntime=0,
+        s_date="",
+        n_date="",
     )
 
 

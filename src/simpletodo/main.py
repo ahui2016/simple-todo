@@ -1,12 +1,15 @@
-from typing import cast
+import arrow
 import click
+from typing import cast
 
-from simpletodo.model import ErrMsg, NotFound, TodoList, TodoStatus, new_todoitem, now
+from simpletodo.model import DB, ErrMsg, NotFound, Repeat, TodoList, TodoStatus, new_todoitem, now
 from simpletodo.util import (
+    DateFormat,
     db_path,
     ensure_db_file,
     load_db,
     print_donelist,
+    print_repeatlist,
     print_todolist,
     split_db,
     update_db,
@@ -63,9 +66,10 @@ def cli(ctx):
             click.echo("Use 'todo --help' to get more information.")
             ctx.exit()
 
-        todo_list, done_list, _ = split_db(db)
+        todo_list, done_list, repeat_list = split_db(db)
         print_todolist(todo_list)
         print_donelist(done_list)
+        print_repeatlist(repeat_list)
         print()
 
 
@@ -180,6 +184,56 @@ def redo(ctx, n):
     ctx.exit()
 
 
+@cli.command()
+@click.argument("n", nargs=1, type=click.INT)
+@click.option(
+    "every",
+    "-every",
+    "--every",
+    help="Please input 'week' or 'month' or 'year'."
+)
+@click.option(
+    "start",
+    "-from",
+    "--start-from",
+    help="Please input a date. Example: -from 2021-04-01"
+)
+@click.pass_context
+def repeat(ctx, every, start, n):
+    """Sets the N'th item to repeat every week/month/year.
+
+    It is set to repeat every month start from today by default.
+
+    Example: todo repeat 1
+    """
+    db = load_db()
+    todo_list, _, _ = split_db(db)
+    err = validate_todolist(todo_list, n)
+    if err == NotFound:
+        click.echo("No item in the todo list.")
+        click.echo("Try 'todo --help' to get more information.")
+        ctx.exit()
+    check(ctx, err)
+
+    item = todo_list[n - 1]
+    i = db["items"].index(item)
+
+    if not every:
+        every = "month"
+    db["items"][i]["repeat"] = Repeat[every.capitalize()].name
+
+    today = arrow.now().format(DateFormat)
+    if not start:
+        start = today
+    if arrow.get(start) < arrow.get(today):
+        click.echo("Error: Cannot start from a past day.")
+        ctx.exit()
+
+    set_repeat(db, i, start)
+    update_db(db)
+    ctx.exit()
+
+
 def validate_todolist(l: TodoList, n: int) -> ErrMsg:
     if n < 1:
         return "Please input a number bigger than zero."
@@ -193,6 +247,28 @@ def validate_todolist(l: TodoList, n: int) -> ErrMsg:
         else:
             return f"There are only {size} items"
     return ""
+
+
+def set_repeat(db: DB, i: int, start: str) -> None:
+    """Sets up a repeat event."""
+    today = arrow.now().ceil('day')
+    start_day = arrow.get(start)
+    if start_day > today:
+        db["items"][i]["status"] = TodoStatus.Incomplete.name
+
+    s_date = start_day.format(DateFormat)
+    db["items"][i]["s_date"] = s_date
+
+    match Repeat[db["items"][i]["repeat"]]:
+        case Repeat.Never:
+            raise ValueError("Cannot set repeat to 'Never'.")
+        case Repeat.Week:
+            n_day = arrow.get(s_date).shift(weekday=start_day.weekday())
+        case Repeat.Year:
+            n_day = arrow.get(s_date).shift(year=1)
+        case _:  # case Repeat.Month:
+            n_day = arrow.get(s_date).shift(months=1)
+    db["items"][i]["n_date"] = n_day.format(DateFormat)
 
 
 # 初始化
