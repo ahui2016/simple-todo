@@ -1,7 +1,7 @@
 from typing import cast
 import click
 
-from simpletodo.model import ErrMsg, TodoList, TodoStatus, new_todoitem, now
+from simpletodo.model import ErrMsg, NotFound, TodoList, TodoStatus, new_todoitem, now
 from simpletodo.util import (
     db_path,
     ensure_db_file,
@@ -60,7 +60,7 @@ def cli(ctx):
         if not db["items"]:
             click.echo("There's no todo items.")
             click.echo("Use 'todo add ...' to add a todo item.")
-            click.echo("Use 'todo --help' to get help.")
+            click.echo("Use 'todo --help' to get more information.")
             ctx.exit()
 
         todo_list, done_list, _ = split_db(db)
@@ -78,11 +78,11 @@ def cli(ctx):
 @click.argument("event", nargs=-1, is_eager=True)
 @click.pass_context
 def add(ctx, event):
-    """Add an event.
+    """Adds an event to the todo list.
 
     [EVENT] is a string describing a todo item.
 
-    Example: todo Buy more beer.
+    Example: todo add Buy more beer.
     """
     event = cast(tuple[str], event)
     subject = " ".join(event).strip()
@@ -100,65 +100,99 @@ def add(ctx, event):
 @click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def done(ctx, n):
-    """Mark the N'th item as 'Completed'
+    """Marks the N'th item as 'Completed'.
 
     Example: todo done 1
     """
     db = load_db()
     todo_list, _, _ = split_db(db)
-    validate_todolist(ctx, todo_list, n)
+    err = validate_todolist(todo_list, n)
+    if err == NotFound:
+        click.echo("No item in the todo list.")
+        click.echo("Try 'todo --help' to get more information.")
+        ctx.exit()
+    check(ctx, err)
+
     i = db["items"].index(todo_list[n - 1])
     db["items"][i]["status"] = TodoStatus.Completed.name
     db["items"][i]["dtime"] = now()
     update_db(db)
+    ctx.exit()
 
 
 @cli.command()
 @click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def delete(ctx, n):
-    """Delete the N'th item. (It will be removed, not marked as completed)
+    """Deletes the N'th item. (It will be removed, not marked as completed)
+
+    This command deletes an item in the todo list.
+    Use 'todo clean' to clear the completed list.
 
     Example: todo delete 2
     """
     db = load_db()
     todo_list, _, _ = split_db(db)
-    validate_todolist(ctx, todo_list, n)
+    err = validate_todolist(todo_list, n)
+    if err == NotFound:
+        click.echo("No item in the todo list.")
+        click.echo("Try 'todo delete --help' to get more information.")
+        ctx.exit()
+    check(ctx, err)
     db["items"].remove(todo_list[n - 1])
     update_db(db)
+    ctx.exit()
+
+
+@cli.command()
+@click.pass_context
+def clean(ctx):
+    """Clears the completed list (removes all items in it)."""
+    db = load_db()
+    _, done_list, _ = split_db(db)
+    for item in done_list:
+        db["items"].remove(item)
+    update_db(db)
+    ctx.exit()
 
 
 @cli.command()
 @click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def redo(ctx, n):
-    """Redo the N'th item (which in the completed list).
+    """Marks the N'th item as 'Incomplete'.
 
     Example: todo redo 1
     """
     db = load_db()
     _, done_list, _ = split_db(db)
-    validate_todolist(ctx, done_list, n)
+    err = validate_todolist(done_list, n)
+    if err == NotFound:
+        click.echo("No item in the completed list.")
+        ctx.exit()
+    check(ctx, err)
+
     i = db["items"].index(done_list[n - 1])
     db["items"][i]["status"] = TodoStatus.Incomplete.name
     db["items"][i]["ctime"] = now()
     db["items"][i]["dtime"] = 0
     update_db(db)
+    ctx.exit()
 
 
-def validate_todolist(ctx: click.Context, l: TodoList, n: int) -> None:
+def validate_todolist(l: TodoList, n: int) -> ErrMsg:
     if n < 1:
-        click.echo("Please input a number bigger than zero.")
-        ctx.exit()
+        return "Please input a number bigger than zero."
 
     size = len(l)
+    if not size:
+        return NotFound
     if n > size:
         if size == 1:
-            msg = "There is only 1 item."
+            return "There is only 1 item."
         else:
-            msg = f"There are only {size} items"
-        click.echo(msg)
-        ctx.exit()
+            return f"There are only {size} items"
+    return ""
 
 
 # 初始化

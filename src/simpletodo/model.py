@@ -9,6 +9,8 @@ from enum import Enum, auto
 ErrMsg = str
 """一个描述错误内容的简单字符串，空字符串表示无错误。"""
 
+NotFound: ErrMsg = "NotFound"
+
 
 def now() -> float:
     return arrow.now().timestamp()
