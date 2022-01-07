@@ -2,7 +2,16 @@ import arrow
 import click
 from typing import cast
 
-from simpletodo.model import DB, ErrMsg, NotFound, Repeat, TodoList, TodoStatus, new_todoitem, now
+from simpletodo.model import (
+    DB,
+    ErrMsg,
+    NotFound,
+    Repeat,
+    TodoList,
+    TodoStatus,
+    new_todoitem,
+    now,
+)
 from simpletodo.util import (
     DateFormat,
     db_path,
@@ -116,10 +125,13 @@ def done(ctx, n):
     check(ctx, err)
 
     status = db["items"][n - 1]["status"]
+    repeat = db["items"][n - 1]["repeat"]
     if TodoStatus[status] is TodoStatus.Completed:
-        
+        click.echo("Warning: It was in the completed-list, nothing changes.")
     db["items"][n - 1]["status"] = TodoStatus.Completed.name
-    db["items"][n - 1]["dtime"] = now()
+    if Repeat[repeat] is Repeat.Never:
+        # 如果设置了重复提醒，则不修改 dtime (让它的值保持为零)
+        db["items"][n - 1]["dtime"] = now()
     update_db(db)
     ctx.exit()
 
@@ -135,7 +147,7 @@ def delete(ctx, n):
     db = load_db()
     err = validate_n(db["items"], n)
     check(ctx, err)
-    del db["items"][n-1]
+    del db["items"][n - 1]
     update_db(db)
     ctx.exit()
 
@@ -161,17 +173,16 @@ def redo(ctx, n):
     Example: todo redo 1
     """
     db = load_db()
-    _, done_list, _ = split_db(db)
-    err = validate_n(done_list, n)
-    if err == NotFound:
-        click.echo("No item in the completed list.")
-        ctx.exit()
+    err = validate_n(db["items"], n)
     check(ctx, err)
 
-    i = db["items"].index(done_list[n - 1])
-    db["items"][i]["status"] = TodoStatus.Incomplete.name
-    db["items"][i]["ctime"] = now()
-    db["items"][i]["dtime"] = 0
+    status = db["items"][n - 1]["status"]
+    if TodoStatus[status] is TodoStatus.Incomplete:
+        click.echo("Warning: It was in the incomplete-list, nothing changes.")
+
+    db["items"][n - 1]["status"] = TodoStatus.Incomplete.name
+    db["items"][n - 1]["ctime"] = now()
+    db["items"][n - 1]["dtime"] = 0
     update_db(db)
     ctx.exit()
 
@@ -179,19 +190,23 @@ def redo(ctx, n):
 @cli.command()
 @click.argument("n", nargs=1, type=click.INT)
 @click.option(
-    "every",
-    "-every",
-    "--every",
-    help="Please input 'week' or 'month' or 'year'."
+    "every", "-every", "--every", help="Please input 'week' or 'month' or 'year'."
 )
 @click.option(
     "start",
     "-from",
     "--start-from",
-    help="Please input a date. Example: -from 2021-04-01"
+    help="Please input a date. Example: -from 2021-04-01",
+)
+@click.option(
+    "stop",
+    "-stop",
+    "--stop",
+    is_flag=True,
+    help="Stop repeating the event (删除指定项目的周期计划)",
 )
 @click.pass_context
-def repeat(ctx, every, start, n):
+def repeat(ctx, n, every, start, stop):
     """Sets the N'th item to repeat every week/month/year.
 
     It is set to repeat every month start from today by default.
@@ -199,20 +214,33 @@ def repeat(ctx, every, start, n):
     Example: todo repeat 1
     """
     db = load_db()
-    todo_list, _, _ = split_db(db)
-    err = validate_n(todo_list, n)
-    if err == NotFound:
-        click.echo("No item in the todo list.")
-        click.echo("Try 'todo --help' to get more information.")
-        ctx.exit()
+    err = validate_n(db["items"], n)
     check(ctx, err)
 
-    item = todo_list[n - 1]
-    i = db["items"].index(item)
+    item = db["items"][n - 1]
 
-    if not every:
-        every = "month"
-    db["items"][i]["repeat"] = Repeat[every.capitalize()].name
+    # 优先处理 stop
+    if stop:
+        if Repeat[item["repeat"]] is Repeat.Never:
+            click.echo("Warning: It is not set to repeat, nothing changes.")
+            ctx.exit()
+        db["items"][n - 1]["repeat"] = Repeat.Never.name
+        db["items"][n - 1]["s_date"] = ""
+        db["items"][n - 1]["n_date"] = ""
+        if TodoStatus[item["status"]] is TodoStatus.Completed:
+            # 只有当该项目在 Completed 列表中时，才需要设置 dtime
+            db["items"][n - 1]["dtime"] = now()
+        update_db(db)
+        ctx.exit()
+
+    # 为了逻辑清晰，不能直接修改周期计划，只能先停止，再重新制定计划。
+    if Repeat[item["repeat"]] is not Repeat.Never:
+        click.echo(
+            "Error: Can not change a schedule. Try 'todo repeat [N] -stop' "
+            "to stop a schedule, and then create a new schedule for it."
+        )
+        click.echo("不能直接修改计划，但你可以先执行 'todo repeat [N] -stop', 然后重新制定周期计划。")
+        ctx.exit()
 
     today = arrow.now().format(DateFormat)
     if not start:
@@ -221,7 +249,7 @@ def repeat(ctx, every, start, n):
         click.echo("Error: Cannot start from a past day.")
         ctx.exit()
 
-    set_repeat(db, i, start)
+    make_schedule(ctx, db, n - 1, every, start)
     update_db(db)
     ctx.exit()
 
@@ -241,26 +269,35 @@ def validate_n(l: TodoList, n: int) -> ErrMsg:
     return ""
 
 
-def set_repeat(db: DB, i: int, start: str) -> None:
-    """Sets up a repeat event."""
-    today = arrow.now().ceil('day')
+def make_schedule(ctx: click.Context, db: DB, i: int, every: str, start: str) -> None:
+    """Set up a new schedule (repeat event)."""
+    today = arrow.now().ceil("day")
     start_day = arrow.get(start)
     if start_day > today:
         db["items"][i]["status"] = TodoStatus.Completed.name
+    else:
+        db["items"][i]["status"] = TodoStatus.Incomplete.name
 
     s_date = start_day.format(DateFormat)
     db["items"][i]["s_date"] = s_date
 
-    match Repeat[db["items"][i]["repeat"]]:
-        case Repeat.Never:
-            raise ValueError("Cannot set repeat to 'Never'.")
-        case Repeat.Week:
+    repeat = every.capitalize() if every else "Month"
+    match repeat:
+        case Repeat.Week.name:
             n_day = arrow.get(s_date).shift(weekday=start_day.weekday())
-        case Repeat.Year:
-            n_day = arrow.get(s_date).shift(year=1)
-        case _:  # case Repeat.Month:
+        case Repeat.Month.name:
             n_day = arrow.get(s_date).shift(months=1)
+        case Repeat.Year.name:
+            n_day = arrow.get(s_date).shift(year=1)
+        case _:
+            click.echo(f"Error: Cannot set '-every' to {every}")
+            click.echo("Try 'todo repeat --help' to get more information.")
+            ctx.exit()
+    db["items"][i]["repeat"] = repeat
     db["items"][i]["n_date"] = n_day.format(DateFormat)
+    if db["items"][i]["dtime"]:
+        # 一个事件只要设置了重复提醒，那么它的 dtime 就必须为零
+        db["items"][i]["dtime"] = 0
 
 
 # 初始化

@@ -39,7 +39,7 @@ def split_db(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
             repeat_list.append((idx, item))
     todo_list.sort(key=lambda x: x[1]["ctime"], reverse=True)
     done_list.sort(key=lambda x: x[1]["dtime"], reverse=True)
-    repeat_list.sort(key=lambda x: x[1]["n_date"], reverse=True)
+    repeat_list.sort(key=lambda x: x[1]["n_date"])
     return todo_list, done_list, repeat_list
 
 
@@ -67,10 +67,17 @@ def print_donelist(l: IdxTodoList) -> None:
 def print_repeatlist(l: IdxTodoList) -> None:
     print("\nSchedule\n------------")
     for idx, item in l:
-        print(f"{idx+1}. every {item['repeat'].lower()} [{item['n_date']}] {item['event']}")
+        repeat = item["repeat"]
+        if Repeat[repeat] is Repeat.Week:
+            print(
+                f"{idx+1}. every {arrow.get(item['s_date']).format('dddd')} "
+                f"[{item['n_date']}] {item['event']}"
+            )
+        else:
+            print(f"{idx+1}. every {repeat.lower()} [{item['n_date']}] {item['event']}")
 
 
 def is_last_day(date: str) -> bool:
     """Is it the last day of month?"""
-    last_day = arrow.get(date).ceil('month').format(DateFormat)
+    last_day = arrow.get(date).ceil("month").format(DateFormat)
     return date == last_day
