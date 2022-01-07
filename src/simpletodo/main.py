@@ -90,7 +90,7 @@ def cli(ctx):
 
 
 @cli.command()
-@click.argument("event", nargs=-1, is_eager=True)
+@click.argument("event", nargs=-1, required=True)
 @click.pass_context
 def add(ctx, event):
     """Adds an event to the todo list.
@@ -189,6 +189,12 @@ def redo(ctx, n):
 @cli.command()
 @click.argument("n", nargs=1, type=click.INT)
 @click.option(
+    "subject",
+    "-e",
+    "--edit",
+    help="Edit the subject of an event.",
+)
+@click.option(
     "every", "-every", "--every", help="Please input 'week' or 'month' or 'year'."
 )
 @click.option(
@@ -205,32 +211,37 @@ def redo(ctx, n):
     help="Stop repeating the event (删除指定项目的周期计划)",
 )
 @click.pass_context
-def repeat(ctx, n, every, start:str, stop):
+def repeat(ctx, n, subject, every, start: str, stop):
     """Sets the N'th item to repeat every week/month/year.
 
-    It is set to repeat every month start from today by default.
+    Example 1: todo repeat 1 -every month -from today
 
-    Example: todo repeat 1
+    Example 2: todo repeat 1 -e "Buy more beer!"
     """
     db = load_db()
     err = validate_n(db["items"], n)
     check(ctx, err)
 
-    item = db["items"][n - 1]
+    idx = n - 1
+    item = db["items"][idx]
 
     # 优先处理 stop
     if stop:
         if Repeat[item["repeat"]] is Repeat.Never:
             click.echo("Warning: It is not set to repeat, nothing changes.")
             ctx.exit()
-        db["items"][n - 1]["repeat"] = Repeat.Never.name
-        db["items"][n - 1]["s_date"] = ""
-        db["items"][n - 1]["n_date"] = ""
+        db["items"][idx]["repeat"] = Repeat.Never.name
+        db["items"][idx]["s_date"] = ""
+        db["items"][idx]["n_date"] = ""
         if TodoStatus[item["status"]] is TodoStatus.Completed:
             # 只有当该项目在 Completed 列表中时，才需要设置 dtime
-            db["items"][n - 1]["dtime"] = now()
+            db["items"][idx]["dtime"] = now()
         update_db(db)
         ctx.exit()
+
+    # 如果使用了 '--edit' 参数，就修改主题。
+    # 如果成功修改主题，就退出；否则继续执行后面的代码。
+    edit_subject(ctx, idx, subject)
 
     # 为了逻辑清晰，要求同时设置重复模式与起始时间
     if not every:
@@ -241,13 +252,24 @@ def repeat(ctx, n, every, start:str, stop):
         ctx.exit()
 
     today = arrow.now().format(DateFormat)
-    if (not start) or (start.lower() == 'today'):
+    if (not start) or (start.lower() == "today"):
         start = today
     if arrow.get(start) < arrow.get(today):
         click.echo("Error: Cannot start from a past day.")
         ctx.exit()
 
-    make_schedule(ctx, db, n - 1, every, start)
+    make_schedule(ctx, db, idx, every, start)
+    update_db(db)
+    ctx.exit()
+
+
+def edit_subject(ctx: click.Context, idx: int, subject: str) -> None:
+    subject = subject.strip()
+    if not subject:
+        return
+
+    db = load_db()
+    db["items"][idx]["event"] = subject
     update_db(db)
     ctx.exit()
 
