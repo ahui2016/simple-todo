@@ -5,7 +5,6 @@ from typing import cast
 from simpletodo.model import (
     DB,
     ErrMsg,
-    NotFound,
     Repeat,
     TodoList,
     TodoStatus,
@@ -206,7 +205,7 @@ def redo(ctx, n):
     help="Stop repeating the event (删除指定项目的周期计划)",
 )
 @click.pass_context
-def repeat(ctx, n, every, start, stop):
+def repeat(ctx, n, every, start:str, stop):
     """Sets the N'th item to repeat every week/month/year.
 
     It is set to repeat every month start from today by default.
@@ -233,17 +232,16 @@ def repeat(ctx, n, every, start, stop):
         update_db(db)
         ctx.exit()
 
-    # 为了逻辑清晰，不能直接修改周期计划，只能先停止，再重新制定计划。
-    if Repeat[item["repeat"]] is not Repeat.Never:
-        click.echo(
-            "Error: Can not change a schedule. Try 'todo repeat [N] -stop' "
-            "to stop a schedule, and then create a new schedule for it."
-        )
-        click.echo("不能直接修改计划，但你可以先执行 'todo repeat [N] -stop', 然后重新制定周期计划。")
+    # 为了逻辑清晰，要求同时设置重复模式与起始时间
+    if not every:
+        click.echo("Error: Missing option '-every'.")
+        ctx.exit()
+    if not start:
+        click.echo("Error: Missing option '-from'.")
         ctx.exit()
 
     today = arrow.now().format(DateFormat)
-    if not start:
+    if (not start) or (start.lower() == 'today'):
         start = today
     if arrow.get(start) < arrow.get(today):
         click.echo("Error: Cannot start from a past day.")
@@ -278,13 +276,18 @@ def make_schedule(ctx: click.Context, db: DB, i: int, every: str, start: str) ->
     else:
         db["items"][i]["status"] = TodoStatus.Incomplete.name
 
+    # 一个事件只要设置了重复提醒，那么它的 dtime 就必须为零
+    if db["items"][i]["dtime"]:
+        db["items"][i]["dtime"] = 0
+
     s_date = start_day.format(DateFormat)
     db["items"][i]["s_date"] = s_date
 
     repeat = every.capitalize() if every else "Month"
+    db["items"][i]["repeat"] = repeat
     match repeat:
         case Repeat.Week.name:
-            n_day = arrow.get(s_date).shift(weekday=start_day.weekday())
+            n_day = arrow.get(s_date).shift(days=7)
         case Repeat.Month.name:
             n_day = arrow.get(s_date).shift(months=1)
         case Repeat.Year.name:
@@ -293,11 +296,7 @@ def make_schedule(ctx: click.Context, db: DB, i: int, every: str, start: str) ->
             click.echo(f"Error: Cannot set '-every' to {every}")
             click.echo("Try 'todo repeat --help' to get more information.")
             ctx.exit()
-    db["items"][i]["repeat"] = repeat
     db["items"][i]["n_date"] = n_day.format(DateFormat)
-    if db["items"][i]["dtime"]:
-        # 一个事件只要设置了重复提醒，那么它的 dtime 就必须为零
-        db["items"][i]["dtime"] = 0
 
 
 # 初始化
