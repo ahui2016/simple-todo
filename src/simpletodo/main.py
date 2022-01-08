@@ -189,12 +189,6 @@ def redo(ctx, n):
 @cli.command()
 @click.argument("n", nargs=1, type=click.INT)
 @click.option(
-    "subject",
-    "-e",
-    "--edit",
-    help="Edit the subject of an event.",
-)
-@click.option(
     "every", "-every", "--every", help="Please input 'week' or 'month' or 'year'."
 )
 @click.option(
@@ -239,10 +233,6 @@ def repeat(ctx, n, subject, every, start: str, stop):
         update_db(db)
         ctx.exit()
 
-    # 如果使用了 '--edit' 参数，就修改主题。
-    # 如果成功修改主题，就退出；否则继续执行后面的代码。
-    edit_subject(ctx, idx, subject)
-
     # 为了逻辑清晰，要求同时设置重复模式与起始时间
     if not every:
         click.echo("Error: Missing option '-every'.")
@@ -263,13 +253,27 @@ def repeat(ctx, n, subject, every, start: str, stop):
     ctx.exit()
 
 
-def edit_subject(ctx: click.Context, idx: int, subject: str) -> None:
+@cli.command()
+@click.argument("args", type=(int, str))
+@click.pass_context
+def edit(ctx, args):
+    """Edit the subject of an event.
+    
+    [ARGS] is a tuple[int, str].
+
+    Example: todo edit 1 "Meet John on friday."
+    """
+    n, subject = args
+    db = load_db()
+    err = validate_n(db["items"], n)
+    check(ctx, err)
+
     subject = subject.strip()
     if not subject:
-        return
-
-    db = load_db()
-    db["items"][idx]["event"] = subject
+        click.echo(ctx.get_help())
+        ctx.exit()
+        
+    db["items"][n-1]["event"] = subject
     update_db(db)
     ctx.exit()
 
