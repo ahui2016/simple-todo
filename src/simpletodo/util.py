@@ -3,6 +3,7 @@ import arrow
 from pathlib import Path
 from typing import cast
 from appdirs import AppDirs
+from arrow.arrow import Arrow
 
 from simpletodo.model import DB, IdxTodoList, Repeat, TodoList, TodoStatus, new_db
 
@@ -48,24 +49,31 @@ def update_db(db: DB) -> None:
         json.dump(db, f, indent=4, ensure_ascii=False)
 
 
-def print_todolist(l: IdxTodoList) -> None:
-    if not l:
-        return
+def print_todolist(l: IdxTodoList, all: bool) -> None:
     print("\nTodo\n------------")
+    if not l:
+        print("(none)")
+        if not all:
+            print("\nTry 'todo -a' to include completed items.")
+        return
     for idx, item in l:
         print(f"{idx+1}. {item['event']}")
 
 
 def print_donelist(l: IdxTodoList) -> None:
-    if not l:
-        return
     print("\nCompleted\n------------")
+    if not l:
+        print("(none)")
+        return
     for idx, item in l:
         print(f"{idx+1}. {item['event']}")
 
 
 def print_repeatlist(l: IdxTodoList) -> None:
     print("\nSchedule\n------------")
+    if not l:
+        print("(none)")
+        return
     for idx, item in l:
         repeat = item["repeat"]
         if Repeat[repeat] is Repeat.Week:
@@ -77,7 +85,7 @@ def print_repeatlist(l: IdxTodoList) -> None:
             print(f"{idx+1}. every {repeat.lower()} [{item['n_date']}] {item['event']}")
 
 
-def is_last_day(date: str) -> bool:
+def is_last_day(date: Arrow) -> bool:
     """Is it the last day of month?"""
-    last_day = arrow.get(date).ceil("month").format(DateFormat)
+    last_day = date.ceil("month").format(DateFormat)
     return date == last_day

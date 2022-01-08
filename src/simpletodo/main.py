@@ -1,4 +1,5 @@
 import arrow
+from arrow.arrow import Arrow
 import click
 from typing import cast
 
@@ -15,6 +16,7 @@ from simpletodo.util import (
     DateFormat,
     db_path,
     ensure_db_file,
+    is_last_day,
     load_db,
     print_donelist,
     print_repeatlist,
@@ -60,27 +62,35 @@ def show_where(ctx: click.Context, param, value):
     expose_value=False,
     callback=show_where,
 )
-# @click.option(
-#     ""
-# )
+@click.option(
+    "all",
+    "-a",
+    "--all",
+    is_flag=True,
+)
 @click.pass_context
-def cli(ctx):
+def cli(ctx, all):
     """simple-todo: Yet another command line TODO tool (命令行TODO工具)
 
     Just run 'todo' (with no options and no command) to list all items.
+
+    https://pypi.org/project/simpletodo/
     """
     if ctx.invoked_subcommand is None:
         db = load_db()
         if not db["items"]:
-            click.echo("There's no todo items.")
+            click.echo("There's no todo item.")
             click.echo("Use 'todo add ...' to add a todo item.")
             click.echo("Use 'todo --help' to get more information.")
             ctx.exit()
 
         todo_list, done_list, repeat_list = split_db(db)
-        print_todolist(todo_list)
-        print_donelist(done_list)
-        print_repeatlist(repeat_list)
+        print_todolist(todo_list, all)
+
+        if all:
+            print_donelist(done_list)
+            print_repeatlist(repeat_list)
+
         print()
 
 
@@ -205,12 +215,10 @@ def redo(ctx, n):
     help="Stop repeating the event (删除指定项目的周期计划)",
 )
 @click.pass_context
-def repeat(ctx, n, subject, every, start: str, stop):
+def repeat(ctx, n, every, start: str, stop):
     """Sets the N'th item to repeat every week/month/year.
 
-    Example 1: todo repeat 1 -every month -from today
-
-    Example 2: todo repeat 1 -e "Buy more beer!"
+    Example: todo repeat 1 -every month -from today
     """
     db = load_db()
     err = validate_n(db["items"], n)
@@ -236,19 +244,23 @@ def repeat(ctx, n, subject, every, start: str, stop):
     # 为了逻辑清晰，要求同时设置重复模式与起始时间
     if not every:
         click.echo("Error: Missing option '-every'.")
+        click.echo("Try 'todo repeat --help' to get more information")
         ctx.exit()
     if not start:
         click.echo("Error: Missing option '-from'.")
+        click.echo("Try 'todo repeat --help' to get more information")
         ctx.exit()
 
-    today = arrow.now().format(DateFormat)
-    if (not start) or (start.lower() == "today"):
-        start = today
-    if arrow.get(start) < arrow.get(today):
-        click.echo("Error: Cannot start from a past day.")
-        ctx.exit()
+    today = arrow.now()
+    match start.lower():
+        case "today":
+            s_date = today
+        case "tomorrow":
+            s_date = today.shift(days=1)
+        case _:
+            s_date = arrow.get(start)
 
-    make_schedule(ctx, db, idx, every, start)
+    make_schedule(ctx, db, idx, every, s_date)
     update_db(db)
     ctx.exit()
 
@@ -258,7 +270,7 @@ def repeat(ctx, n, subject, every, start: str, stop):
 @click.pass_context
 def edit(ctx, args):
     """Edit the subject of an event.
-    
+
     [ARGS] is a tuple[int, str].
 
     Example: todo edit 1 "Meet John on friday."
@@ -272,8 +284,8 @@ def edit(ctx, args):
     if not subject:
         click.echo(ctx.get_help())
         ctx.exit()
-        
-    db["items"][n-1]["event"] = subject
+
+    db["items"][n - 1]["event"] = subject
     update_db(db)
     ctx.exit()
 
@@ -293,36 +305,68 @@ def validate_n(l: TodoList, n: int) -> ErrMsg:
     return ""
 
 
-def make_schedule(ctx: click.Context, db: DB, i: int, every: str, start: str) -> None:
+def make_schedule(ctx: click.Context, db: DB, i: int, every: str, start: Arrow) -> None:
     """Set up a new schedule (repeat event)."""
-    today = arrow.now().ceil("day")
-    start_day = arrow.get(start)
-    if start_day > today:
-        db["items"][i]["status"] = TodoStatus.Completed.name
-    else:
-        db["items"][i]["status"] = TodoStatus.Incomplete.name
 
+    # 验证 start
+    today = arrow.now().ceil("day")
+    if start < today:
+        click.echo("Error: Cannot start from a past day.")
+        ctx.exit()
+
+    # set "s_date"
+    db["items"][i]["s_date"] = start.format(DateFormat)
+
+    # set "dtime"
     # 一个事件只要设置了重复提醒，那么它的 dtime 就必须为零
     if db["items"][i]["dtime"]:
         db["items"][i]["dtime"] = 0
 
-    s_date = start_day.format(DateFormat)
-    db["items"][i]["s_date"] = s_date
-
-    repeat = every.capitalize() if every else "Month"
+    # set "repeat"
+    repeat = every.capitalize()
+    if repeat not in (Repeat.Week.name, Repeat.Month.name, Repeat.Year.name):
+        click.echo(f"Error: Cannot set '-every' to {every}")
+        click.echo("Try 'todo repeat --help' to get more information.")
+        ctx.exit()
     db["items"][i]["repeat"] = repeat
+
+    # set "status" and "n_date"
+    # 在本函数的开头已经验证过 start, 防止其小于今天。
+    if start > today:
+        db["items"][i]["status"] = TodoStatus.Completed.name
+        db["items"][i]["n_date"] = db["items"][i]["s_date"]
+    if start == today:
+        db["items"][i]["status"] = TodoStatus.Incomplete.name
+        n_date = shift_next_date(start, start, Repeat[repeat])
+        db["items"][i]["n_date"] = n_date.format(DateFormat)
+
+
+# 在调用本函数之前，要限定 repeat 的值的范围。
+def shift_next_date(s_date: Arrow, n_date: Arrow, repeat: Repeat) -> Arrow:
     match repeat:
-        case Repeat.Week.name:
-            n_day = arrow.get(s_date).shift(days=7)
-        case Repeat.Month.name:
-            n_day = arrow.get(s_date).shift(months=1)
-        case Repeat.Year.name:
-            n_day = arrow.get(s_date).shift(year=1)
+        case Repeat.Week:
+            return n_date.shift(days=7)
+        case Repeat.Month:
+            if is_last_day(s_date):
+                return n_date.shift(months=1).ceil("month")
+            return n_date.shift(months=1)
+        case Repeat.Year:
+            if is_last_day(s_date):
+                return n_date.shift(year=1).ceil("month")
+            return n_date.shift(year=1)
         case _:
-            click.echo(f"Error: Cannot set '-every' to {every}")
-            click.echo("Try 'todo repeat --help' to get more information.")
-            ctx.exit()
-    db["items"][i]["n_date"] = n_day.format(DateFormat)
+            raise ValueError(repeat)
+
+
+def update_schedules(db: DB) -> None:
+    today = arrow.now().ceil("day").shift(days=1)  # 注意
+    for idx, item in enumerate(db["items"]):
+        n_date = arrow.get(item["n_date"])
+        if today == n_date:
+            db["items"][idx]["status"] = TodoStatus.Incomplete.name
+            s_date = arrow.get(item["s_date"])
+            n_date = shift_next_date(s_date, n_date, Repeat[item["repeat"]])
+            db["items"][idx]["n_date"] = n_date.format(DateFormat)
 
 
 # 初始化
