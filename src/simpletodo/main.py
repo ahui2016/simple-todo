@@ -1,22 +1,17 @@
 import arrow
-from arrow.arrow import Arrow
 import click
 from typing import cast
 
 from simpletodo.model import (
-    DB,
     ErrMsg,
     Repeat,
-    TodoList,
     TodoStatus,
     new_todoitem,
     now,
 )
 from simpletodo.util import (
-    DateFormat,
     db_path,
     ensure_db_file,
-    is_last_day,
     load_db,
     print_donelist,
     print_repeatlist,
@@ -234,7 +229,7 @@ def redo(ctx, n):
     "-stop",
     "--stop",
     is_flag=True,
-    help="Stop repeating the event (删除指定项目的周期计划)",
+    help="Stop repeating the event (删除指定事项的周期计划)",
 )
 @click.pass_context
 def repeat(ctx, n, every, start: str, stop):

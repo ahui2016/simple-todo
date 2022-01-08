@@ -125,7 +125,7 @@ def stop_schedule(db: DB, idx: int, item:TodoItem, ctx:click.Context,) -> None:
     db["items"][idx]["s_date"] = ""
     db["items"][idx]["n_date"] = ""
     if TodoStatus[item["status"]] is TodoStatus.Completed:
-        # 只有当该项目在 Completed 列表中时，才需要设置 dtime
+        # 只有当该事项状态为 Completed 时，才需要设置 dtime
         db["items"][idx]["dtime"] = now()
     update_db(db)
     ctx.exit()
