@@ -29,6 +29,8 @@ from . import (
     __package_name__,
 )
 
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
 
 def check(ctx: click.Context, err: ErrMsg) -> None:
     """检查 err, 有错误则打印并终止程序，无错误则什么都不用做。"""
@@ -45,7 +47,16 @@ def show_where(ctx: click.Context, param, value):
     ctx.exit()
 
 
+def dump(ctx: click.Context, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    with open(db_path, "rb") as f:
+        click.echo(f.read())
+    ctx.exit()
+
+
 @click.group(invoke_without_command=True)
+@click.help_option("-h", "--help")
 @click.version_option(
     __version__,
     "-V",
@@ -54,19 +65,27 @@ def show_where(ctx: click.Context, param, value):
     message="%(prog)s version: %(version)s",
 )
 @click.option(
-    "-W",
+    "-w",
     "--where",
     is_flag=True,
-    is_eager=True,
     help="Show locations about simple-todo.",
     expose_value=False,
     callback=show_where,
+)
+@click.option(
+    "-d",
+    "--dump",
+    is_flag=True,
+    help="Dump out the database (a json file).",
+    expose_value=False,
+    callback=dump,
 )
 @click.option(
     "all",
     "-a",
     "--all",
     is_flag=True,
+    help="Show all lists (including 'Completed' and 'Schedule')."
 )
 @click.pass_context
 def cli(ctx, all):
@@ -100,7 +119,7 @@ def cli(ctx, all):
 # 以下是子命令
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument("event", nargs=-1, required=True)
 @click.pass_context
 def add(ctx, event):
@@ -122,7 +141,7 @@ def add(ctx, event):
     ctx.exit()
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def done(ctx, n):
@@ -146,7 +165,7 @@ def done(ctx, n):
     ctx.exit()
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def delete(ctx, n):
@@ -162,7 +181,7 @@ def delete(ctx, n):
     ctx.exit()
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.pass_context
 def clean(ctx):
     """Clears the completed list (removes all items in it)."""
@@ -174,7 +193,7 @@ def clean(ctx):
     ctx.exit()
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def redo(ctx, n):
@@ -197,7 +216,7 @@ def redo(ctx, n):
     ctx.exit()
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument("n", nargs=1, type=click.INT)
 @click.option(
     "every", "-every", "--every", help="Please input 'week' or 'month' or 'year'."
@@ -266,7 +285,7 @@ def repeat(ctx, n, every, start: str, stop):
     ctx.exit()
 
 
-@cli.command()
+@cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument("args", type=(int, str))
 @click.pass_context
 def edit(ctx, args):
