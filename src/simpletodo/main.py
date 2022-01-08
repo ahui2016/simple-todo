@@ -78,6 +78,7 @@ def cli(ctx, all):
     """
     if ctx.invoked_subcommand is None:
         db = load_db()
+        update_schedules(db)
         if not db["items"]:
             click.echo("There's no todo item.")
             click.echo("Use 'todo add ...' to add a todo item.")
@@ -309,8 +310,8 @@ def make_schedule(ctx: click.Context, db: DB, i: int, every: str, start: Arrow) 
     """Set up a new schedule (repeat event)."""
 
     # 验证 start
-    today = arrow.now().ceil("day")
-    if start < today:
+    today = arrow.now()
+    if start < today.floor("day"):  # floor("day") 返回本地时间当天零时零分
         click.echo("Error: Cannot start from a past day.")
         ctx.exit()
 
@@ -332,10 +333,10 @@ def make_schedule(ctx: click.Context, db: DB, i: int, every: str, start: Arrow) 
 
     # set "status" and "n_date"
     # 在本函数的开头已经验证过 start, 防止其小于今天。
-    if start > today:
+    if start > today.ceil("day"):  # ceil("day") 返回本地时间当天最后一秒
         db["items"][i]["status"] = TodoStatus.Completed.name
         db["items"][i]["n_date"] = db["items"][i]["s_date"]
-    if start == today:
+    if start.format(DateFormat) == today.format(DateFormat):
         db["items"][i]["status"] = TodoStatus.Incomplete.name
         n_date = shift_next_date(start, start, Repeat[repeat])
         db["items"][i]["n_date"] = n_date.format(DateFormat)
@@ -359,14 +360,20 @@ def shift_next_date(s_date: Arrow, n_date: Arrow, repeat: Repeat) -> Arrow:
 
 
 def update_schedules(db: DB) -> None:
-    today = arrow.now().ceil("day").shift(days=1)  # 注意
+    today = arrow.now()
+    u_date = today.format(DateFormat)
+    if u_date == db["u_date"]:
+        # 如果今天已经更新过，就不用更新了（每天只更新一次）
+        return
+    db["u_date"] = u_date
     for idx, item in enumerate(db["items"]):
-        n_date = arrow.get(item["n_date"])
-        if today == n_date:
+        if today.format(DateFormat) == item["n_date"]:
             db["items"][idx]["status"] = TodoStatus.Incomplete.name
             s_date = arrow.get(item["s_date"])
+            n_date = arrow.get(item["n_date"])
             n_date = shift_next_date(s_date, n_date, Repeat[item["repeat"]])
             db["items"][idx]["n_date"] = n_date.format(DateFormat)
+    update_db(db)
 
 
 # 初始化

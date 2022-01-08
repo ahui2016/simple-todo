@@ -2,7 +2,8 @@
 
 Yet another command line TODO tool (命令行TODO工具)
 
-WIP, will be published soon...
+WIP, will be published soon...  
+(施工中，将于近日完善文档后正式发布)
 
 主要理念：代码尽可能简单，功能尽可能实用。
 
