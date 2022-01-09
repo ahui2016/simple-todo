@@ -1,5 +1,6 @@
 import arrow
 import click
+import pyperclip
 from typing import cast
 
 from simpletodo.model import (
@@ -137,6 +138,24 @@ def add(ctx, event):
     db = load_db()
     db["items"].insert(0, new_todoitem(subject))
     update_db(db)
+    ctx.exit()
+
+@cli.command(context_settings=CONTEXT_SETTINGS)
+@click.argument("n", nargs=1, type=click.INT)
+@click.pass_context
+def copy(ctx, n):
+    """Copy the content of an event to the clipboard.
+    
+    复制指定事项的内容到剪贴板。
+
+    Example: todo copy 3
+    """
+    db = load_db()
+    err = validate_n(db["items"], n)
+    check(ctx, err)
+
+    content = db["items"][n-1]["event"]
+    pyperclip.copy(content)
     ctx.exit()
 
 

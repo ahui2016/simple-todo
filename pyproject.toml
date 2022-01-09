@@ -12,6 +12,7 @@ dependencies = [
   "arrow",
   "click",
   "appdirs",
+  "pyperclip",
 ]
 requires-python = ">=3.10"
 dynamic = ["version", "description"]
