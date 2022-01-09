@@ -31,6 +31,8 @@ Yet another command line TODO tool (命令行 todo 工具)
 
 ## 安装
 
+simple todo 使用了 Python 3.10 的新特性，比如 type union operator, pattern matching 等，因此，如果你的系统中未安装 Python 3.10, 推荐使用 [pyenv](https://github.com/pyenv/pyenv) 或 [miniconda](https://docs.conda.io/en/latest/miniconda.html) 来安装最新版本的 Python。
+
 ### 简单安装方法
 
 执行以下命令即可：
