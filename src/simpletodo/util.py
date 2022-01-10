@@ -15,7 +15,6 @@ from simpletodo.model import (
     IdxTodoList,
     Repeat,
     TodoItem,
-    TodoList,
     TodoStatus,
     new_db,
     now,
@@ -74,7 +73,13 @@ def load_cfg() -> TodoConfig:
 def load_db() -> DB:
     cfg = load_cfg()
     with open(cfg["db_path"], "rb") as f:
-        return cast(DB, json.load(f))
+        db_dict = json.load(f)
+        return DB(
+            u_date=db_dict.get("u_date", ""),
+            items=db_dict.get("items", []),
+            hide_motto=db_dict.get("hide_motto", False),
+            mottos=db_dict.get("mottos", []),
+        )
 
 
 def split_db(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
@@ -103,6 +108,17 @@ def update_db(db: DB) -> None:
     cfg = load_cfg()
     with open(cfg["db_path"], "w", encoding="utf-8") as f:
         json.dump(db, f, indent=4, ensure_ascii=False)
+
+
+def print_mottos(mottos: list[str], is_hide: bool) -> None:
+    status = "hide" if is_hide else "show"
+    print(f"\nMottos [{status}]\n----------------")
+    if not mottos:
+        print("(none)")
+        print("\nUse 'todo motto --add \"...\"' to add a motto.")
+    for idx, item in enumerate(mottos):
+        print(f"{idx+1}. {item}")
+    print()
 
 
 def print_todolist(t_list: IdxTodoList, show_all: bool) -> None:
@@ -147,13 +163,13 @@ def is_last_day(date: Arrow) -> bool:
     return date == last_day
 
 
-def validate_n(t_list: TodoList, n: int) -> ErrMsg:
-    if not t_list:
+def validate_n(a_list: list, n: int) -> ErrMsg:
+    if not a_list:
         return "There is no item in the list."
     if n < 1:
         return "Please input a number bigger than zero."
 
-    size = len(t_list)
+    size = len(a_list)
     if n > size:
         if size == 1:
             return "There is only 1 item."

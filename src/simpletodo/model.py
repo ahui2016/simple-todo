@@ -57,10 +57,12 @@ def new_todoitem(event: str) -> TodoItem:
 class DB(TypedDict):
     u_date: str  # "YYYY-DD-MM" 用来判断要不要刷新周期计划（每天刷新一次）
     items: list[TodoItem]
+    hide_motto: bool
+    mottos: list[str]
 
 
 def new_db() -> DB:
-    return DB(u_date="", items=[])
+    return DB(u_date="", items=[], hide_motto=False, mottos=[])
 
 
 class TodoConfig(TypedDict):

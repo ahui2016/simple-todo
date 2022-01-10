@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 
 import arrow
@@ -27,6 +28,7 @@ from simpletodo.util import (
     load_cfg,
     change_db_path,
     todo_cfg_path,
+    print_mottos,
 )
 from . import (
     __version__,
@@ -110,6 +112,9 @@ def cli(ctx, show_all, new_path):
             ctx.exit()
 
         db = load_db()
+
+        if (not db["hide_motto"]) and db["mottos"]:
+            click.echo(f"\n【{random.choice(db['mottos'])}】")
         update_schedules(db)
         if not db["items"]:
             click.echo("There's no todo item.")
@@ -155,7 +160,7 @@ def add(ctx, event):
 
 
 @cli.command(context_settings=CONTEXT_SETTINGS)
-@click.argument("n", nargs=1, type=click.INT)
+@click.argument("n", nargs=1, type=int)
 @click.pass_context
 def copy(ctx, n):
     """Copy the content of an event to the clipboard.
@@ -174,7 +179,7 @@ def copy(ctx, n):
 
 
 @cli.command(context_settings=CONTEXT_SETTINGS)
-@click.argument("n", nargs=1, type=click.INT)
+@click.argument("n", nargs=1, type=int)
 @click.pass_context
 def done(ctx, n):
     """Mark the N'th item as 'Completed'.
@@ -199,7 +204,7 @@ def done(ctx, n):
 
 
 @cli.command(context_settings=CONTEXT_SETTINGS)
-@click.argument("n", nargs=1, type=click.INT)
+@click.argument("n", nargs=1, type=int)
 @click.pass_context
 def delete(ctx, n):
     """Delete the N'th item. (It will be removed, not marked as completed)
@@ -227,7 +232,7 @@ def clean(ctx):
 
 
 @cli.command(context_settings=CONTEXT_SETTINGS)
-@click.argument("n", nargs=1, type=click.INT)
+@click.argument("n", nargs=1, type=int)
 @click.pass_context
 def redo(ctx, n):
     """Mark the N'th item as 'Incomplete'.
@@ -251,7 +256,7 @@ def redo(ctx, n):
 
 
 @cli.command(context_settings=CONTEXT_SETTINGS)
-@click.argument("n", nargs=1, type=click.INT)
+@click.argument("n", nargs=1, type=int)
 @click.option("every", "-every", "--every", help="Every 'week' or 'month' or 'year'.")
 @click.option(
     "start",
@@ -329,6 +334,55 @@ def edit(ctx, args):
 
     db["items"][n - 1]["event"] = subject
     update_db(db)
+    ctx.exit()
+
+
+@cli.command(context_settings=CONTEXT_SETTINGS)
+@click.option("show_list", "-l", "--list", is_flag=True, help="List all mottos.")
+@click.option(
+    "is_show", "-on", is_flag=True, help="Show a motto when listing todo items"
+)
+@click.option(
+    "is_hide", "-off", is_flag=True, help="Do not show motto when listing todo items"
+)
+@click.option("sentence", "-a", "--add", help="Add a motto.")
+@click.option("del_n", "-d", "--delete", type=int, help="Example: todo motto -d 1")
+@click.pass_context
+def motto(ctx, show_list, is_show, is_hide, sentence, del_n):
+    """Motto (格言/座右铭/目标)"""
+    db = load_db()
+
+    if show_list:
+        print_mottos(db["mottos"], db["hide_motto"])
+        ctx.exit()
+
+    if is_show:
+        db["hide_motto"] = False
+        update_db(db)
+        ctx.exit()
+
+    if is_hide:
+        db["hide_motto"] = True
+        update_db(db)
+        ctx.exit()
+
+    if sentence:
+        sentence = sentence.strip()
+        if not sentence:
+            click.echo(ctx.get_help())
+            ctx.exit()
+        db["mottos"].append(sentence)
+        update_db(db)
+        ctx.exit()
+
+    if del_n:
+        err = validate_n(db["mottos"], del_n)
+        check(ctx, err)
+        del db["mottos"][del_n - 1]
+        update_db(db)
+        ctx.exit()
+
+    click.echo(ctx.get_help())
     ctx.exit()
 
 
