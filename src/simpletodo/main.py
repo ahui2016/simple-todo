@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import arrow
 import click
 import pyperclip
@@ -11,7 +13,6 @@ from simpletodo.model import (
     now,
 )
 from simpletodo.util import (
-    db_path,
     ensure_db_file,
     load_db,
     print_donelist,
@@ -23,6 +24,9 @@ from simpletodo.util import (
     validate_n,
     make_schedule,
     update_schedules,
+    load_cfg,
+    change_db_path,
+    todo_cfg_path,
 )
 from . import (
     __version__,
@@ -39,15 +43,16 @@ def check(ctx: click.Context, err: ErrMsg) -> None:
         ctx.exit()
 
 
-def show_where(ctx: click.Context, param, value):
+def show_where(ctx: click.Context, _, value):
     if not value or ctx.resilient_parsing:
         return
     click.echo(f"[todo] {__file__}")
+    click.echo(f"[config] {todo_cfg_path}")
     click.echo(f"[database] {db_path}")
     ctx.exit()
 
 
-def dump(ctx: click.Context, param, value):
+def dump(ctx: click.Context, _, value):
     if not value or ctx.resilient_parsing:
         return
     with open(db_path, "rb") as f:
@@ -81,14 +86,17 @@ def dump(ctx: click.Context, param, value):
     callback=dump,
 )
 @click.option(
-    "all",
+    "show_all",
     "-a",
     "--all",
     is_flag=True,
     help="Show all items (including 'Completed' and 'Schedule').",
 )
+@click.option(
+    "new_path", "--set-db-path", type=click.Path(), help="Change the database location."
+)
 @click.pass_context
-def cli(ctx, all):
+def cli(ctx, show_all, new_path):
     """simple-todo: Yet another command line TODO tool (命令行TODO工具)
 
     Just run 'todo' (with no options and no command) to list all items.
@@ -96,6 +104,11 @@ def cli(ctx, all):
     https://pypi.org/project/simpletodo/
     """
     if ctx.invoked_subcommand is None:
+        if new_path:
+            err = change_db_path(Path(new_path))
+            check(ctx, err)
+            ctx.exit()
+
         db = load_db()
         update_schedules(db)
         if not db["items"]:
@@ -105,9 +118,9 @@ def cli(ctx, all):
             ctx.exit()
 
         todo_list, done_list, repeat_list = split_db(db)
-        print_todolist(todo_list, all)
+        print_todolist(todo_list, show_all)
 
-        if all:
+        if show_all:
             print_donelist(done_list)
             print_repeatlist(repeat_list)
 
@@ -140,12 +153,13 @@ def add(ctx, event):
     update_db(db)
     ctx.exit()
 
+
 @cli.command(context_settings=CONTEXT_SETTINGS)
 @click.argument("n", nargs=1, type=click.INT)
 @click.pass_context
 def copy(ctx, n):
     """Copy the content of an event to the clipboard.
-    
+
     复制指定事项的内容到剪贴板。
 
     Example: todo copy 3
@@ -154,7 +168,7 @@ def copy(ctx, n):
     err = validate_n(db["items"], n)
     check(ctx, err)
 
-    content = db["items"][n-1]["event"]
+    content = db["items"][n - 1]["event"]
     pyperclip.copy(content)
     ctx.exit()
 
@@ -171,14 +185,15 @@ def done(ctx, n):
     err = validate_n(db["items"], n)
     check(ctx, err)
 
-    status = db["items"][n - 1]["status"]
-    repeat = db["items"][n - 1]["repeat"]
+    idx = n - 1
+    status = db["items"][idx]["status"]
+    every = db["items"][idx]["repeat"]
     if TodoStatus[status] is TodoStatus.Completed:
         click.echo("Warning: It was in the completed-list, nothing changes.")
-    db["items"][n - 1]["status"] = TodoStatus.Completed.name
-    if Repeat[repeat] is Repeat.Never:
+    db["items"][idx]["status"] = TodoStatus.Completed.name
+    if Repeat[every] is Repeat.Never:
         # 如果设置了重复提醒，则不修改 dtime (让它的值保持为零)
-        db["items"][n - 1]["dtime"] = now()
+        db["items"][idx]["dtime"] = now()
     update_db(db)
     ctx.exit()
 
@@ -223,13 +238,14 @@ def redo(ctx, n):
     err = validate_n(db["items"], n)
     check(ctx, err)
 
-    status = db["items"][n - 1]["status"]
+    idx = n - 1
+    status = db["items"][idx]["status"]
     if TodoStatus[status] is TodoStatus.Incomplete:
         click.echo("Warning: It is in the incomplete-list, nothing changes.")
 
-    db["items"][n - 1]["status"] = TodoStatus.Incomplete.name
-    db["items"][n - 1]["ctime"] = now()
-    db["items"][n - 1]["dtime"] = 0
+    db["items"][idx]["status"] = TodoStatus.Incomplete.name
+    db["items"][idx]["ctime"] = now()
+    db["items"][idx]["dtime"] = 0
     update_db(db)
     ctx.exit()
 
@@ -318,6 +334,7 @@ def edit(ctx, args):
 
 # 初始化
 ensure_db_file()
+db_path = load_cfg()["db_path"]
 
 if __name__ == "__main__":
     cli(obj={})

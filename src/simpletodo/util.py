@@ -1,3 +1,6 @@
+import os
+import shutil
+
 import click
 import json
 import arrow
@@ -16,25 +19,61 @@ from simpletodo.model import (
     TodoStatus,
     new_db,
     now,
+    TodoConfig,
 )
 
+todo_cfg_name = "todo-config.json"
 todo_db_name = "todo-db.json"
 DateFormat = "YYYY-MM-DD"
 
 app_dirs = AppDirs("todo", "github-ahui2016")
 app_config_dir = Path(app_dirs.user_config_dir)
-db_path = app_config_dir.joinpath(todo_db_name)
+todo_cfg_path = app_config_dir.joinpath(todo_cfg_name)
+default_db_path = app_config_dir.joinpath(todo_db_name)
+
+
+def ensure_cfg_file() -> None:
+    app_config_dir.mkdir(parents=True, exist_ok=True)
+    if not todo_cfg_path.exists():
+        with open(todo_cfg_path, "w", encoding="utf-8") as f:
+            cfg = TodoConfig(db_path=default_db_path.__str__())
+            json.dump(cfg, f, indent=4, ensure_ascii=False)
 
 
 def ensure_db_file() -> None:
-    app_config_dir.mkdir(parents=True, exist_ok=True)
+    ensure_cfg_file()
+    cfg = load_cfg()
+    db_path = Path(cfg["db_path"])
     if not db_path.exists():
         with open(db_path, "w", encoding="utf-8") as f:
             json.dump(new_db(), f, indent=4, ensure_ascii=False)
 
 
+def change_db_path(new_path: Path) -> ErrMsg:
+    """new_path 是一个不存在的文件或一个已存在的文件夹，不能是一个已存在的文件"""
+    cfg = load_cfg()
+    new_path = new_path.resolve()
+    if new_path.is_dir():
+        new_path = new_path.joinpath(todo_db_name)
+    if new_path.exists():
+        return f"{new_path} already exists."
+    old_path = cfg["db_path"]
+    shutil.copyfile(old_path, new_path)
+    cfg["db_path"] = new_path.__str__()
+    with open(todo_cfg_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=4, ensure_ascii=False)
+    os.remove(old_path)
+    return ""
+
+
+def load_cfg() -> TodoConfig:
+    with open(todo_cfg_path, "rb") as f:
+        return cast(TodoConfig, json.load(f))
+
+
 def load_db() -> DB:
-    with open(db_path, "rb") as f:
+    cfg = load_cfg()
+    with open(cfg["db_path"], "rb") as f:
         return cast(DB, json.load(f))
 
 
@@ -42,13 +81,18 @@ def split_db(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
     todo_list: IdxTodoList = []
     done_list: IdxTodoList = []
     repeat_list: IdxTodoList = []
+
     for idx, item in enumerate(db["items"]):
+        # 只要 status 是 Incomplete 就归入待办列表
         if TodoStatus[item["status"]] is TodoStatus.Incomplete:
             todo_list.append((idx, item))
+        # 只要完成时间大于零就归入已完成列表
         if item["dtime"] > 0:
             done_list.append((idx, item))
+        # 只要 repeat 不是 Never 就归入计划任务列表
         if Repeat[item["repeat"]] is not Repeat.Never:
             repeat_list.append((idx, item))
+
     todo_list.sort(key=lambda x: x[1]["ctime"], reverse=True)
     done_list.sort(key=lambda x: x[1]["dtime"], reverse=True)
     repeat_list.sort(key=lambda x: x[1]["n_date"])
@@ -56,36 +100,37 @@ def split_db(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
 
 
 def update_db(db: DB) -> None:
-    with open(db_path, "w", encoding="utf-8") as f:
+    cfg = load_cfg()
+    with open(cfg["db_path"], "w", encoding="utf-8") as f:
         json.dump(db, f, indent=4, ensure_ascii=False)
 
 
-def print_todolist(l: IdxTodoList, all: bool) -> None:
+def print_todolist(t_list: IdxTodoList, show_all: bool) -> None:
     print("\nTodo\n------------")
-    if not l:
+    if not t_list:
         print("(none)")
-        if not all:
+        if not show_all:
             print("\nTry 'todo -a' to include completed items.")
         return
-    for idx, item in l:
+    for idx, item in t_list:
         print(f"{idx+1}. {item['event']}")
 
 
-def print_donelist(l: IdxTodoList) -> None:
+def print_donelist(t_list: IdxTodoList) -> None:
     print("\nCompleted\n------------")
-    if not l:
+    if not t_list:
         print("(none)")
         return
-    for idx, item in l:
+    for idx, item in t_list:
         print(f"{idx+1}. {item['event']}")
 
 
-def print_repeatlist(l: IdxTodoList) -> None:
+def print_repeatlist(t_list: IdxTodoList) -> None:
     print("\nSchedule\n------------")
-    if not l:
+    if not t_list:
         print("(none)")
         return
-    for idx, item in l:
+    for idx, item in t_list:
         repeat = item["repeat"]
         if Repeat[repeat] is Repeat.Week:
             print(
@@ -102,13 +147,13 @@ def is_last_day(date: Arrow) -> bool:
     return date == last_day
 
 
-def validate_n(l: TodoList, n: int) -> ErrMsg:
-    if not l:
+def validate_n(t_list: TodoList, n: int) -> ErrMsg:
+    if not t_list:
         return "There is no item in the list."
     if n < 1:
         return "Please input a number bigger than zero."
 
-    size = len(l)
+    size = len(t_list)
     if n > size:
         if size == 1:
             return "There is only 1 item."
@@ -117,7 +162,12 @@ def validate_n(l: TodoList, n: int) -> ErrMsg:
     return ""
 
 
-def stop_schedule(db: DB, idx: int, item:TodoItem, ctx:click.Context,) -> None:
+def stop_schedule(
+    db: DB,
+    idx: int,
+    item: TodoItem,
+    ctx: click.Context,
+) -> None:
     if Repeat[item["repeat"]] is Repeat.Never:
         click.echo("Warning: It is not set to repeat, nothing changes.")
         ctx.exit()

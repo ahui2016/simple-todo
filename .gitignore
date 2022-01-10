@@ -1,3 +1,4 @@
 ﻿dist
 env
 src/simpletodo/__pycache__
+.idea

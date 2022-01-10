@@ -61,3 +61,7 @@ class DB(TypedDict):
 
 def new_db() -> DB:
     return DB(u_date="", items=[])
+
+
+class TodoConfig(TypedDict):
+    db_path: str
