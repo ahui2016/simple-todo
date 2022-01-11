@@ -18,8 +18,9 @@ from simpletodo.util import (
     load_db,
     print_donelist,
     print_repeatlist,
+    print_result,
     print_todolist,
-    split_db,
+    split_lists,
     stop_schedule,
     update_db,
     validate_n,
@@ -113,8 +114,19 @@ def cli(ctx, show_all, new_path):
 
         db = load_db()
 
+        # 显示格言
         if (not db["hide_motto"]) and db["mottos"]:
-            click.echo(f"\n【{random.choice(db['mottos'])}】")
+            n = db["select_motto"]
+            if n:
+                # 固定显示
+                click.echo(f"\n【{db['mottos'][n-1]}】")
+            else:
+                # 随机显示（并且随机不显示）
+                # 十分之一的概率会显示
+                if random.randint(1, 10) == 1:
+                    click.echo(f"\n【{random.choice(db['mottos'])}】")
+
+        # 显示 todo
         update_schedules(db)
         if not db["items"]:
             click.echo("There's no todo item.")
@@ -122,7 +134,7 @@ def cli(ctx, show_all, new_path):
             click.echo("Use 'todo --help' to get more information.")
             ctx.exit()
 
-        todo_list, done_list, repeat_list = split_db(db)
+        todo_list, done_list, repeat_list = split_lists(db)
         print_todolist(todo_list, show_all)
 
         if show_all:
@@ -156,6 +168,7 @@ def add(ctx, event):
     db = load_db()
     db["items"].insert(0, new_todoitem(subject))
     update_db(db)
+    print_result(db)
     ctx.exit()
 
 
@@ -216,6 +229,7 @@ def delete(ctx, n):
     check(ctx, err)
     del db["items"][n - 1]
     update_db(db)
+    print_result(db)
     ctx.exit()
 
 
@@ -224,10 +238,11 @@ def delete(ctx, n):
 def clean(ctx):
     """Clear the completed list (delete all completed items)."""
     db = load_db()
-    _, done_list, _ = split_db(db)
+    _, done_list, _ = split_lists(db)
     for idx, _ in done_list:
         del db["items"][idx]
     update_db(db)
+    print_result(db)
     ctx.exit()
 
 
@@ -345,15 +360,28 @@ def edit(ctx, args):
 @click.option(
     "is_hide", "-off", is_flag=True, help="Do not show motto when listing todo items"
 )
+@click.option(
+    "randomly", "-r", "--random", is_flag=True, help="Randomly display a motto."
+)
+@click.option(
+    "select", "-s", "--select", type=int, help="Select which motto to display."
+)
+@click.option(
+    "top", "-t", "--top", type=int, help="Move a motto to the top of the list"
+)
 @click.option("sentence", "-a", "--add", help="Add a motto.")
+@click.option("edit", "-e", "--edit", type=(int, str), help="Edit a motto.")
 @click.option("del_n", "-d", "--delete", type=int, help="Example: todo motto -d 1")
 @click.pass_context
-def motto(ctx, show_list, is_show, is_hide, sentence, del_n):
+def motto(ctx, show_list, is_show, is_hide, randomly, select, top, sentence, edit:tuple[int, str], del_n):
     """Motto (格言/座右铭/目标)"""
     db = load_db()
+    mottos = db["mottos"]
+    hide_motto = db["hide_motto"]
+    select_n = db["select_motto"]
 
     if show_list:
-        print_mottos(db["mottos"], db["hide_motto"])
+        print_mottos(mottos, hide_motto, select_n)
         ctx.exit()
 
     if is_show:
@@ -375,11 +403,41 @@ def motto(ctx, show_list, is_show, is_hide, sentence, del_n):
         update_db(db)
         ctx.exit()
 
+    if edit:
+        n, value = edit
+        err = validate_n(db["mottos"], n)
+        check(ctx, err)
+        db["mottos"][n-1] = value
+        update_db(db)
+        ctx.exit()
+
+    if randomly:
+        db["select_motto"] = 0
+        update_db(db)
+        ctx.exit()
+
+    if select:
+        err = validate_n(db["mottos"], select)
+        check(ctx, err)
+        db["select_motto"] = select
+        update_db(db)
+        ctx.exit()
+
+    if top:
+        err = validate_n(db["mottos"], top)
+        check(ctx, err)
+        item = db["mottos"].pop(top - 1)
+        db["mottos"].insert(0, item)
+        update_db(db)
+        print_mottos(mottos, hide_motto, select_n)
+        ctx.exit()
+
     if del_n:
         err = validate_n(db["mottos"], del_n)
         check(ctx, err)
         del db["mottos"][del_n - 1]
         update_db(db)
+        print_mottos(mottos, hide_motto, select_n)
         ctx.exit()
 
     click.echo(ctx.get_help())

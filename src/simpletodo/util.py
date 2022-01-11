@@ -78,11 +78,12 @@ def load_db() -> DB:
             u_date=db_dict.get("u_date", ""),
             items=db_dict.get("items", []),
             hide_motto=db_dict.get("hide_motto", False),
+            select_motto=db_dict.get("select_motto", 0),
             mottos=db_dict.get("mottos", []),
         )
 
 
-def split_db(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
+def split_lists(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
     todo_list: IdxTodoList = []
     done_list: IdxTodoList = []
     repeat_list: IdxTodoList = []
@@ -110,9 +111,10 @@ def update_db(db: DB) -> None:
         json.dump(db, f, indent=4, ensure_ascii=False)
 
 
-def print_mottos(mottos: list[str], is_hide: bool) -> None:
+def print_mottos(mottos: list[str], is_hide: bool, n: int) -> None:
     status = "hide" if is_hide else "show"
-    print(f"\nMottos [{status}]\n----------------")
+    select = f"{n}" if n else "random"
+    print(f"\nMottos [{status}] [{select}]\n----------------------")
     if not mottos:
         print("(none)")
         print("\nUse 'todo motto --add \"...\"' to add a motto.")
@@ -155,6 +157,12 @@ def print_repeatlist(t_list: IdxTodoList) -> None:
             )
         else:
             print(f"{idx+1}. every {repeat.lower()} [{item['n_date']}] {item['event']}")
+
+
+def print_result(db: DB) -> None:
+    todo_list, _, _ = split_lists(db)
+    print_todolist(todo_list, True)
+    print()
 
 
 def is_last_day(date: Arrow) -> bool:
