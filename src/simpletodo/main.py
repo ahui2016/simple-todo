@@ -122,8 +122,8 @@ def cli(ctx, show_all, new_path):
                 click.echo(f"\n【{db['mottos'][n-1]}】")
             else:
                 # 随机显示（并且随机不显示）
-                # 十分之一的概率会显示
-                if random.randint(1, 10) == 1:
+                # 五分之一的概率会显示
+                if random.randint(1, 5) == 1:
                     click.echo(f"\n【{random.choice(db['mottos'])}】")
 
         # 显示 todo
@@ -374,7 +374,12 @@ def edit(ctx, args):
 @click.option("del_n", "-d", "--delete", type=int, help="Example: todo motto -d 1")
 @click.pass_context
 def motto(ctx, show_list, is_show, is_hide, randomly, select, top, sentence, edit:tuple[int, str], del_n):
-    """Motto (格言/座右铭/目标)"""
+    """Motto (格言/座右铭/目标)
+    
+    Control how to display a motto when listing todo items.
+
+    设置格言，可显示也可隐藏，如果设为显示，则会在待办事项列表的上方显示。
+    """
     db = load_db()
     mottos = db["mottos"]
     hide_motto = db["hide_motto"]
