@@ -9,6 +9,7 @@ from typing import cast
 from simpletodo.model import (
     ErrMsg,
     Repeat,
+    TodoItem,
     TodoStatus,
     new_todoitem,
     now,
@@ -238,9 +239,11 @@ def delete(ctx, n):
 def clean(ctx):
     """Clear the completed list (delete all completed items)."""
     db = load_db()
-    _, done_list, _ = split_lists(db)
-    for idx, _ in done_list:
-        del db["items"][idx]
+    head, _, tail = split_lists(db)
+    items: list[TodoItem] = []
+    for _, item in head+tail:
+        items.append(item)
+    db["items"] = items
     update_db(db)
     print_result(db)
     ctx.exit()
