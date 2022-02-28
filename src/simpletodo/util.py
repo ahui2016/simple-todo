@@ -1,3 +1,4 @@
+from binascii import Incomplete
 import os
 import shutil
 
@@ -89,15 +90,15 @@ def split_lists(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
     repeat_list: IdxTodoList = []
 
     for idx, item in enumerate(db["items"]):
-        # 只要 status 是 Incomplete 就归入待办列表
-        if TodoStatus[item["status"]] is TodoStatus.Incomplete:
-            todo_list.append((idx, item))
-        # 只要完成时间大于零就归入已完成列表
-        if item["dtime"] > 0:
-            done_list.append((idx, item))
-        # 只要 repeat 不是 Never 就归入计划任务列表
-        if Repeat[item["repeat"]] is not Repeat.Never:
-            repeat_list.append((idx, item))
+        match TodoStatus[item["status"]]:
+            case TodoStatus.Incomplete:
+                todo_list.append((idx, item))
+            case TodoStatus.Completed:
+                done_list.append((idx, item))
+            case TodoStatus.Waiting:
+                repeat_list.append((idx, item))
+            case _:
+                raise ValueError(f"Unknown status: {item['status']}")
 
     todo_list.sort(key=lambda x: x[1]["ctime"], reverse=True)
     done_list.sort(key=lambda x: x[1]["dtime"], reverse=True)
@@ -186,25 +187,6 @@ def validate_n(a_list: list, n: int) -> ErrMsg:
     return ""
 
 
-def stop_schedule(
-    db: DB,
-    idx: int,
-    item: TodoItem,
-    ctx: click.Context,
-) -> None:
-    if Repeat[item["repeat"]] is Repeat.Never:
-        click.echo("Warning: It is not set to repeat, nothing changes.")
-        ctx.exit()
-    db["items"][idx]["repeat"] = Repeat.Never.name
-    db["items"][idx]["s_date"] = ""
-    db["items"][idx]["n_date"] = ""
-    if TodoStatus[item["status"]] is TodoStatus.Completed:
-        # 只有当该事项状态为 Completed 时，才需要设置 dtime
-        db["items"][idx]["dtime"] = now()
-    update_db(db)
-    ctx.exit()
-
-
 def make_schedule(db: DB, i: int, every: str, start: Arrow, ctx: click.Context) -> None:
     """Set up a new schedule (repeat event)."""
 
@@ -219,8 +201,7 @@ def make_schedule(db: DB, i: int, every: str, start: Arrow, ctx: click.Context) 
 
     # set "dtime"
     # 一个事件只要设置了重复提醒，那么它的 dtime 就必须为零
-    if db["items"][i]["dtime"]:
-        db["items"][i]["dtime"] = 0
+    db["items"][i]["dtime"] = 0
 
     # set "repeat"
     repeat = every.capitalize()
@@ -233,43 +214,51 @@ def make_schedule(db: DB, i: int, every: str, start: Arrow, ctx: click.Context) 
     # set "status" and "n_date"
     # 在本函数的开头已经验证过 start, 防止其小于今天。
     if start > today.ceil("day"):  # ceil("day") 返回本地时间当天最后一秒
-        db["items"][i]["status"] = TodoStatus.Completed.name
+        db["items"][i]["status"] = TodoStatus.Waiting.name
         db["items"][i]["n_date"] = db["items"][i]["s_date"]
     if start.format(DateFormat) == today.format(DateFormat):
         db["items"][i]["status"] = TodoStatus.Incomplete.name
         n_date = shift_next_date(start, start, Repeat[repeat])
-        db["items"][i]["n_date"] = n_date.format(DateFormat)
+        db["items"][i]["n_date"] = n_date
 
 
-# 在调用本函数之前，要限定 repeat 的值的范围。
-def shift_next_date(s_date: Arrow, n_date: Arrow, repeat: Repeat) -> Arrow:
-    match repeat:
-        case Repeat.Week:
-            return n_date.shift(days=7)
-        case Repeat.Month:
-            if is_last_day(s_date):
-                return n_date.shift(months=1).ceil("month")
-            return n_date.shift(months=1)
-        case Repeat.Year:
-            if is_last_day(s_date):
-                return n_date.shift(year=1).ceil("month")
-            return n_date.shift(year=1)
-        case _:
-            raise ValueError(repeat)
+def shift_next_date(s_date: Arrow, n_date: Arrow, repeat: Repeat) -> str:
+    today = arrow.now().format(DateFormat)
+    next_date = n_date.format(DateFormat)
+    while next_date <= today:
+        match repeat:
+            case Repeat.Week:
+                n_date = n_date.shift(days=7)
+            case Repeat.Month:
+                if is_last_day(s_date):
+                    n_date = n_date.shift(months=1).ceil("month")
+                else:
+                    n_date = n_date.shift(months=1)
+            case Repeat.Year:
+                if is_last_day(s_date):
+                    n_date = n_date.shift(year=1).ceil("month")
+                else:
+                    n_date = n_date.shift(year=1)
+            case _:
+                raise ValueError(repeat)
+
+        next_date = n_date.format(DateFormat)
+
+    return next_date
 
 
 def update_schedules(db: DB) -> None:
-    today = arrow.now()
+    today = arrow.now().format(DateFormat)
     u_date = today.format(DateFormat)
     if u_date == db["u_date"]:
         # 如果今天已经更新过，就不用更新了（每天只更新一次）
         return
     db["u_date"] = u_date
     for idx, item in enumerate(db["items"]):
-        if today.format(DateFormat) == item["n_date"]:
+        if TodoStatus[item["status"]] is TodoStatus.Waiting and today >= item["n_date"]:
             db["items"][idx]["status"] = TodoStatus.Incomplete.name
             s_date = arrow.get(item["s_date"])
             n_date = arrow.get(item["n_date"])
-            n_date = shift_next_date(s_date, n_date, Repeat[item["repeat"]])
-            db["items"][idx]["n_date"] = n_date.format(DateFormat)
+            next_date = shift_next_date(s_date, n_date, Repeat[item["repeat"]])
+            db["items"][idx]["n_date"] = next_date
     update_db(db)

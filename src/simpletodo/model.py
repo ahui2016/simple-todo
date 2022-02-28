@@ -17,8 +17,9 @@ def now() -> float:
 
 
 class TodoStatus(Enum):
-    Incomplete = auto()
-    Completed = auto()
+    Incomplete = auto()  # 已经开始做，但未完成
+    Completed = auto()  # 已完成，执行 clean 命令可批量删除全部已完成项目
+    Waiting = auto()  # 专用于计划任务
 
 
 class Repeat(Enum):

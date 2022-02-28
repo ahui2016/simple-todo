@@ -34,6 +34,13 @@ Yet another command line TODO tool (命令行 todo 工具)
 
 simple todo 使用了 Python 3.10 的新特性，比如 type union operator, pattern matching 等，因此，如果你的系统中未安装 Python 3.10, 推荐使用 [pyenv](https://github.com/pyenv/pyenv) 或 [miniconda](https://docs.conda.io/en/latest/miniconda.html) 来安装最新版本的 Python。
 
+例如，安装 miniconda 后，可以这样创建 3.10 环境：
+
+```sh
+$ conda create --name py310 python=3.10
+$ conda activate py310
+```
+
 ### 简单安装方法
 
 执行以下命令即可：
@@ -113,8 +120,6 @@ todo repeat 2 -every month -from today
 
 `-from` 后面指定具体日期，比如 `-from 2022-2-28`, 可以使用的简称只有 `today` 与 `tomorrow`。（注意，不可设置一个过去的日期，只能设置今天或未来的日期。）
 
-使用命令 `todo repeat [N] -stop` 可清除序号 N 的事项的周期提醒计划（仅使其不再重复提醒，不会删除事项）。
-
 ### 如何设置提前 N 天提醒？
 
 本工具没有这个功能，但有变通的办法，比如我每月 5 日还信用卡，但我希望每月 3 日就提醒，可以添加一个内容为 “每月5日信用卡还款” 的待办事项，然后设置每月 3 日提醒即可，我自己就是这样用的。
@@ -172,3 +177,9 @@ Mottos [show] [random]
 ## 帮助信息
 
 使用命令 `todo -h` 或 `todo add -h` 可查看帮助信息，其中 `add` 可以是其他子命令，每个子命令都有帮助信息。
+
+## 更新日志
+
+### 2022-02-28
+
+- `remove` 删除了 “中止计划任务（但不删除任务）” 的功能，使程序逻辑清晰了很多。

@@ -22,7 +22,6 @@ from simpletodo.util import (
     print_result,
     print_todolist,
     split_lists,
-    stop_schedule,
     update_db,
     validate_n,
     make_schedule,
@@ -160,7 +159,6 @@ def add(ctx, event):
 
     Example: todo add Buy more beer.
     """
-    event = cast(tuple[str], event)
     subject = " ".join(event).strip()
     if not subject:
         click.echo(ctx.get_help())
@@ -188,7 +186,10 @@ def copy(ctx, n):
     check(ctx, err)
 
     content = db["items"][n - 1]["event"]
-    pyperclip.copy(content)
+    try:
+        pyperclip.copy(content)
+    except Exception:
+        pass
     ctx.exit()
 
 
@@ -206,13 +207,17 @@ def done(ctx, n):
 
     idx = n - 1
     status = db["items"][idx]["status"]
-    every = db["items"][idx]["repeat"]
-    if TodoStatus[status] is TodoStatus.Completed:
-        click.echo("Warning: It was in the completed-list, nothing changes.")
-    db["items"][idx]["status"] = TodoStatus.Completed.name
-    if Repeat[every] is Repeat.Never:
-        # 如果设置了重复提醒，则不修改 dtime (让它的值保持为零)
+    repeat = db["items"][idx]["repeat"]
+    if TodoStatus[status] is not TodoStatus.Incomplete:
+        click.echo("Warning: It is not in the incomplete-list, nothing changes.")
+        ctx.exit()
+    
+    if Repeat[repeat] is Repeat.Never:
         db["items"][idx]["dtime"] = now()
+        db["items"][idx]["status"] = TodoStatus.Completed.name
+    else:
+        db["items"][idx]["status"] = TodoStatus.Waiting.name
+
     update_db(db)
     ctx.exit()
 
@@ -239,10 +244,9 @@ def delete(ctx, n):
 def clean(ctx):
     """Clear the completed list (delete all completed items)."""
     db = load_db()
-    head, _, tail = split_lists(db)
-    items: list[TodoItem] = []
-    for _, item in head+tail:
-        items.append(item)
+    items = [
+        x for x in db["items"] if TodoStatus[x["status"]] is not TodoStatus.Completed
+    ]
     db["items"] = items
     update_db(db)
     print_result(db)
@@ -263,8 +267,9 @@ def redo(ctx, n):
 
     idx = n - 1
     status = db["items"][idx]["status"]
-    if TodoStatus[status] is TodoStatus.Incomplete:
-        click.echo("Warning: It is in the incomplete-list, nothing changes.")
+    if TodoStatus[status] is not TodoStatus.Completed:
+        click.echo("Warning: It is not in the completed-list, nothing changes.")
+        ctx.exit()
 
     db["items"][idx]["status"] = TodoStatus.Incomplete.name
     db["items"][idx]["ctime"] = now()
@@ -282,15 +287,8 @@ def redo(ctx, n):
     "--start-from",
     help="Example: -from 2021-04-01",
 )
-@click.option(
-    "stop",
-    "-stop",
-    "--stop",
-    is_flag=True,
-    help="Stop repeating the event (删除指定事项的周期计划)",
-)
 @click.pass_context
-def repeat(ctx, n, every, start: str, stop):
+def repeat(ctx, n, every, start: str):
     """Set the N'th item to repeat every week/month/year.
 
     Example: todo repeat 1 -every month -from today
@@ -298,13 +296,6 @@ def repeat(ctx, n, every, start: str, stop):
     db = load_db()
     err = validate_n(db["items"], n)
     check(ctx, err)
-
-    idx = n - 1
-    item = db["items"][idx]
-
-    # 优先处理 stop
-    if stop:
-        stop_schedule(db, idx, item, ctx)
 
     # 为了逻辑清晰，要求同时设置重复模式与起始时间
     if not every:
@@ -325,6 +316,7 @@ def repeat(ctx, n, every, start: str, stop):
         case _:
             s_date = arrow.get(start)
 
+    idx = n - 1
     make_schedule(db, idx, every, s_date, ctx)
     update_db(db)
     ctx.exit()
@@ -376,9 +368,20 @@ def edit(ctx, args):
 @click.option("edit", "-e", "--edit", type=(int, str), help="Edit a motto.")
 @click.option("del_n", "-d", "--delete", type=int, help="Example: todo motto -d 1")
 @click.pass_context
-def motto(ctx, show_list, is_show, is_hide, randomly, select, top, sentence, edit:tuple[int, str], del_n):
+def motto(
+    ctx,
+    show_list,
+    is_show,
+    is_hide,
+    randomly,
+    select,
+    top,
+    sentence,
+    edit: tuple[int, str],
+    del_n,
+):
     """Motto (格言/座右铭/目标)
-    
+
     Control how to display a motto when listing todo items.
 
     设置格言，可显示也可隐藏，如果设为显示，则会在待办事项列表的上方显示。
@@ -415,7 +418,7 @@ def motto(ctx, show_list, is_show, is_hide, randomly, select, top, sentence, edi
         n, value = edit
         err = validate_n(db["mottos"], n)
         check(ctx, err)
-        db["mottos"][n-1] = value
+        db["mottos"][n - 1] = value
         update_db(db)
         ctx.exit()
 
