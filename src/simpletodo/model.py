@@ -69,3 +69,4 @@ def new_db() -> DB:
 
 class TodoConfig(TypedDict):
     db_path: str
+    upgrade: str  # 用于避免重复执行升级程序

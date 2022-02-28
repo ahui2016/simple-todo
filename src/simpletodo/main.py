@@ -4,18 +4,17 @@ from pathlib import Path
 import arrow
 import click
 import pyperclip
-from typing import cast
 
 from simpletodo.model import (
     ErrMsg,
     Repeat,
-    TodoItem,
     TodoStatus,
     new_todoitem,
     now,
 )
 from simpletodo.util import (
     ensure_db_file,
+    load_cfg,
     load_db,
     print_donelist,
     print_repeatlist,
@@ -23,10 +22,10 @@ from simpletodo.util import (
     print_todolist,
     split_lists,
     update_db,
+    upgrade_to_v016,
     validate_n,
     make_schedule,
     update_schedules,
-    load_cfg,
     change_db_path,
     todo_cfg_path,
     print_mottos,
@@ -107,12 +106,13 @@ def cli(ctx, show_all, new_path):
     https://pypi.org/project/simpletodo/
     """
     if ctx.invoked_subcommand is None:
+        cfg = load_cfg()
         if new_path:
-            err = change_db_path(Path(new_path))
+            err = change_db_path(Path(new_path), cfg)
             check(ctx, err)
             ctx.exit()
 
-        db = load_db()
+        db = load_db(cfg)
 
         # 显示格言
         if (not db["hide_motto"]) and db["mottos"]:
@@ -127,7 +127,7 @@ def cli(ctx, show_all, new_path):
                     click.echo(f"\n【{random.choice(db['mottos'])}】")
 
         # 显示 todo
-        update_schedules(db)
+        update_schedules(db, cfg)
         if not db["items"]:
             click.echo("There's no todo item.")
             click.echo("Use 'todo add ...' to add a todo item.")
@@ -164,9 +164,10 @@ def add(ctx, event):
         click.echo(ctx.get_help())
         ctx.exit()
 
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     db["items"].insert(0, new_todoitem(subject))
-    update_db(db)
+    update_db(db, cfg)
     print_result(db)
     ctx.exit()
 
@@ -181,7 +182,8 @@ def copy(ctx, n):
 
     Example: todo copy 3
     """
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     err = validate_n(db["items"], n)
     check(ctx, err)
 
@@ -201,7 +203,8 @@ def done(ctx, n):
 
     Example: todo done 1
     """
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     err = validate_n(db["items"], n)
     check(ctx, err)
 
@@ -211,14 +214,14 @@ def done(ctx, n):
     if TodoStatus[status] is not TodoStatus.Incomplete:
         click.echo("Warning: It is not in the incomplete-list, nothing changes.")
         ctx.exit()
-    
+
     if Repeat[repeat] is Repeat.Never:
         db["items"][idx]["dtime"] = now()
         db["items"][idx]["status"] = TodoStatus.Completed.name
     else:
         db["items"][idx]["status"] = TodoStatus.Waiting.name
 
-    update_db(db)
+    update_db(db, cfg)
     ctx.exit()
 
 
@@ -230,11 +233,12 @@ def delete(ctx, n):
 
     Example: todo delete 2
     """
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     err = validate_n(db["items"], n)
     check(ctx, err)
     del db["items"][n - 1]
-    update_db(db)
+    update_db(db, cfg)
     print_result(db)
     ctx.exit()
 
@@ -243,12 +247,13 @@ def delete(ctx, n):
 @click.pass_context
 def clean(ctx):
     """Clear the completed list (delete all completed items)."""
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     items = [
         x for x in db["items"] if TodoStatus[x["status"]] is not TodoStatus.Completed
     ]
     db["items"] = items
-    update_db(db)
+    update_db(db, cfg)
     print_result(db)
     ctx.exit()
 
@@ -261,7 +266,8 @@ def redo(ctx, n):
 
     Example: todo redo 1
     """
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     err = validate_n(db["items"], n)
     check(ctx, err)
 
@@ -274,7 +280,7 @@ def redo(ctx, n):
     db["items"][idx]["status"] = TodoStatus.Incomplete.name
     db["items"][idx]["ctime"] = now()
     db["items"][idx]["dtime"] = 0
-    update_db(db)
+    update_db(db, cfg)
     ctx.exit()
 
 
@@ -293,7 +299,8 @@ def repeat(ctx, n, every, start: str):
 
     Example: todo repeat 1 -every month -from today
     """
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     err = validate_n(db["items"], n)
     check(ctx, err)
 
@@ -318,7 +325,7 @@ def repeat(ctx, n, every, start: str):
 
     idx = n - 1
     make_schedule(db, idx, every, s_date, ctx)
-    update_db(db)
+    update_db(db, cfg)
     ctx.exit()
 
 
@@ -333,7 +340,8 @@ def edit(ctx, args):
     Example: todo edit 1 "Meet John on friday."
     """
     n, subject = args
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     err = validate_n(db["items"], n)
     check(ctx, err)
 
@@ -343,7 +351,7 @@ def edit(ctx, args):
         ctx.exit()
 
     db["items"][n - 1]["event"] = subject
-    update_db(db)
+    update_db(db, cfg)
     ctx.exit()
 
 
@@ -386,7 +394,8 @@ def motto(
 
     设置格言，可显示也可隐藏，如果设为显示，则会在待办事项列表的上方显示。
     """
-    db = load_db()
+    cfg = load_cfg()
+    db = load_db(cfg)
     mottos = db["mottos"]
     hide_motto = db["hide_motto"]
     select_n = db["select_motto"]
@@ -397,12 +406,12 @@ def motto(
 
     if is_show:
         db["hide_motto"] = False
-        update_db(db)
+        update_db(db, cfg)
         ctx.exit()
 
     if is_hide:
         db["hide_motto"] = True
-        update_db(db)
+        update_db(db, cfg)
         ctx.exit()
 
     if sentence:
@@ -411,7 +420,7 @@ def motto(
             click.echo(ctx.get_help())
             ctx.exit()
         db["mottos"].append(sentence)
-        update_db(db)
+        update_db(db, cfg)
         ctx.exit()
 
     if edit:
@@ -419,19 +428,19 @@ def motto(
         err = validate_n(db["mottos"], n)
         check(ctx, err)
         db["mottos"][n - 1] = value
-        update_db(db)
+        update_db(db, cfg)
         ctx.exit()
 
     if randomly:
         db["select_motto"] = 0
-        update_db(db)
+        update_db(db, cfg)
         ctx.exit()
 
     if select:
         err = validate_n(db["mottos"], select)
         check(ctx, err)
         db["select_motto"] = select
-        update_db(db)
+        update_db(db, cfg)
         ctx.exit()
 
     if top:
@@ -439,7 +448,7 @@ def motto(
         check(ctx, err)
         item = db["mottos"].pop(top - 1)
         db["mottos"].insert(0, item)
-        update_db(db)
+        update_db(db, cfg)
         print_mottos(mottos, hide_motto, select_n)
         ctx.exit()
 
@@ -447,7 +456,7 @@ def motto(
         err = validate_n(db["mottos"], del_n)
         check(ctx, err)
         del db["mottos"][del_n - 1]
-        update_db(db)
+        update_db(db, cfg)
         print_mottos(mottos, hide_motto, select_n)
         ctx.exit()
 
@@ -456,8 +465,9 @@ def motto(
 
 
 # 初始化
-ensure_db_file()
-db_path = load_cfg()["db_path"]
+cfg = ensure_db_file()
+db_path = cfg["db_path"]
+upgrade_to_v016()
 
 if __name__ == "__main__":
     cli(obj={})

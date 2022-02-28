@@ -1,4 +1,3 @@
-from binascii import Incomplete
 import os
 import shutil
 
@@ -6,7 +5,6 @@ import click
 import json
 import arrow
 from pathlib import Path
-from typing import cast
 from appdirs import AppDirs
 from arrow.arrow import Arrow
 
@@ -15,12 +13,11 @@ from simpletodo.model import (
     ErrMsg,
     IdxTodoList,
     Repeat,
-    TodoItem,
     TodoStatus,
     new_db,
-    now,
     TodoConfig,
 )
+from . import __version__
 
 todo_cfg_name = "todo-config.json"
 todo_db_name = "todo-db.json"
@@ -32,26 +29,30 @@ todo_cfg_path = app_config_dir.joinpath(todo_cfg_name)
 default_db_path = app_config_dir.joinpath(todo_db_name)
 
 
+def write_cfg(cfg: TodoConfig) -> None:
+    with open(todo_cfg_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=4, ensure_ascii=False)
+
+
 def ensure_cfg_file() -> None:
     app_config_dir.mkdir(parents=True, exist_ok=True)
     if not todo_cfg_path.exists():
-        with open(todo_cfg_path, "w", encoding="utf-8") as f:
-            cfg = TodoConfig(db_path=default_db_path.__str__())
-            json.dump(cfg, f, indent=4, ensure_ascii=False)
+        cfg = TodoConfig(db_path=default_db_path.__str__(), upgrade="")
+        write_cfg(cfg)
 
 
-def ensure_db_file() -> None:
+def ensure_db_file() -> TodoConfig:
     ensure_cfg_file()
     cfg = load_cfg()
     db_path = Path(cfg["db_path"])
     if not db_path.exists():
         with open(db_path, "w", encoding="utf-8") as f:
             json.dump(new_db(), f, indent=4, ensure_ascii=False)
+    return cfg
 
 
-def change_db_path(new_path: Path) -> ErrMsg:
+def change_db_path(new_path: Path, cfg: TodoConfig) -> ErrMsg:
     """new_path 是一个不存在的文件或一个已存在的文件夹，不能是一个已存在的文件"""
-    cfg = load_cfg()
     new_path = new_path.resolve()
     if new_path.is_dir():
         new_path = new_path.joinpath(todo_db_name)
@@ -68,11 +69,14 @@ def change_db_path(new_path: Path) -> ErrMsg:
 
 def load_cfg() -> TodoConfig:
     with open(todo_cfg_path, "rb") as f:
-        return cast(TodoConfig, json.load(f))
+        cfg_dict = json.load(f)
+        return TodoConfig(
+            db_path=cfg_dict["db_path"],
+            upgrade=cfg_dict.get("upgrade", ""),
+        )
 
 
-def load_db() -> DB:
-    cfg = load_cfg()
+def load_db(cfg: TodoConfig) -> DB:
     with open(cfg["db_path"], "rb") as f:
         db_dict = json.load(f)
         return DB(
@@ -106,8 +110,7 @@ def split_lists(db: DB) -> tuple[IdxTodoList, IdxTodoList, IdxTodoList]:
     return todo_list, done_list, repeat_list
 
 
-def update_db(db: DB) -> None:
-    cfg = load_cfg()
+def update_db(db: DB, cfg: TodoConfig) -> None:
     with open(cfg["db_path"], "w", encoding="utf-8") as f:
         json.dump(db, f, indent=4, ensure_ascii=False)
 
@@ -247,10 +250,10 @@ def shift_next_date(s_date: Arrow, n_date: Arrow, repeat: Repeat) -> str:
     return next_date
 
 
-def update_schedules(db: DB) -> None:
+def update_schedules(db: DB, cfg: TodoConfig, force: bool = False) -> None:
     today = arrow.now().format(DateFormat)
     u_date = today.format(DateFormat)
-    if u_date == db["u_date"]:
+    if not force and u_date == db["u_date"]:
         # 如果今天已经更新过，就不用更新了（每天只更新一次）
         return
     db["u_date"] = u_date
@@ -261,4 +264,24 @@ def update_schedules(db: DB) -> None:
             n_date = arrow.get(item["n_date"])
             next_date = shift_next_date(s_date, n_date, Repeat[item["repeat"]])
             db["items"][idx]["n_date"] = next_date
-    update_db(db)
+    update_db(db, cfg)
+
+
+def upgrade_to_v016() -> None:
+    """Upgrade to v0.1.6
+
+    从低于 v0.1.6 升级到 v0.1.6 及以上时自动升级。
+    """
+    cfg = load_cfg()
+    if cfg["upgrade"] == "0.1.6" or __version__ < "0.1.6":
+        return
+
+    print("Upgrading to v0.1.6...")
+    cfg["upgrade"] = "0.1.6"
+    write_cfg(cfg)
+
+    db = load_db(cfg)
+    for idx, item in enumerate(db["items"]):
+        if TodoStatus[item["status"]] is TodoStatus.Completed and item["dtime"] <= 0:
+            db["items"][idx]["status"] = TodoStatus.Waiting.name
+    update_schedules(db, cfg, force=True)
