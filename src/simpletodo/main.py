@@ -236,6 +236,10 @@ def delete(ctx, n):
     db = util.load_db(cfg)
     err = util.validate_n(db["items"], n)
     check(ctx, err)
+
+    print(f'{n}. {db["items"][n-1]["event"]}')
+    click.confirm("Confirm deletion (确认删除，不可恢复)", abort=True)
+
     del db["items"][n - 1]
     util.update_db(db, cfg)
     util.print_result(db)

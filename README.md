@@ -183,6 +183,7 @@ Mottos [show] [random]
 ### 2022-03-24
 
 - **add** `todo add -g/--gui` 打开 GUI 窗口方便输入文字（避免字符转义问题）。
+- **add** `todo delete [N]` 删除时有 y/n 确认。
 
 ### 2022-02-28
 
