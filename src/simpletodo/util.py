@@ -37,8 +37,8 @@ def write_cfg(cfg: TodoConfig) -> None:
 def ensure_cfg_file() -> None:
     app_config_dir.mkdir(parents=True, exist_ok=True)
     if not todo_cfg_path.exists():
-        cfg = TodoConfig(db_path=default_db_path.__str__(), upgrade="")
-        write_cfg(cfg)
+        default_cfg = TodoConfig(db_path=default_db_path.__str__(), upgrade="0.1.6")
+        write_cfg(default_cfg)
 
 
 def ensure_db_file() -> TodoConfig:
