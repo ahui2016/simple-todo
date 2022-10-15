@@ -239,9 +239,9 @@ def shift_next_date(s_date: Arrow, n_date: Arrow, repeat: Repeat) -> str:
                     n_date = n_date.shift(months=1)
             case Repeat.Year:
                 if is_last_day(s_date):
-                    n_date = n_date.shift(year=1).ceil("month")
+                    n_date = n_date.shift(years=1).ceil("month")
                 else:
-                    n_date = n_date.shift(year=1)
+                    n_date = n_date.shift(years=1)
             case _:
                 raise ValueError(repeat)
 
